@@ -54,7 +54,12 @@ end
 #joint estimation of g, α and λ by block coordinate ascent:
 #π by mix-SQP, α by weighted least squares (MM step; fixed by the controls when there are any), λ by a
 #one-dimensional search
-function mouthwash_fit(β̃, s, Γ, controls; nullweight = 10, estimate_λ = true, tol = 1.0e-7, maxiter = 500)
+#with alpha_uncertainty = true the variance of each corrected estimate rⱼ = β̃ⱼ - Γⱼ'α̂ includes the uncertainty of α̂
+#(as in the CATE variance of Wang et al.): λ (sⱼ² + Γⱼ' V Γⱼ), V = (Γ_C diag(1 / s_C²) Γ_C')⁻¹ with controls; without
+#controls, V is the inverse weighted Gram matrix of the α step at convergence, and the prior is refitted
+function mouthwash_fit(
+        β̃, s, Γ, controls; nullweight = 10, estimate_λ = true, alpha_uncertainty = true, tol = 1.0e-7, maxiter = 500
+    )
     p = length(β̃)
     s2 = s .^ 2
     free = setdiff(1:p, controls)
@@ -63,7 +68,12 @@ function mouthwash_fit(β̃, s, Γ, controls; nullweight = 10, estimate_λ = tru
         α = Γ' \ β̃
     else
         ΓC = Γ[:, controls]
-        α = Symmetric(ΓC * (ΓC' ./ s2[controls])) \ (ΓC * (β̃[controls] ./ s2[controls]))
+        G = Symmetric(ΓC * (ΓC' ./ s2[controls]))
+        α = G \ (ΓC * (β̃[controls] ./ s2[controls]))
+        if alpha_uncertainty #Var(rⱼ) = λ (sⱼ² + Γⱼ' G⁻¹ Γⱼ) for the non-control genes
+            s2 = copy(s2)
+            s2[free] .+= vec(sum(Γ[:, free] .* (G \ Γ[:, free]); dims = 1))
+        end
     end
     λ = 1.0
     r = β̃ - Γ' * α
@@ -101,12 +111,21 @@ function mouthwash_fit(β̃, s, Γ, controls; nullweight = 10, estimate_λ = tru
         end
         estimate_λ && (λ = update_λ(r, s2, σ2, W))
     end
-    post = ash_posterior(r, λ .* s2, σ2, π)
+    v = λ .* s2
+    if alpha_uncertainty && isempty(controls)
+        #Var(α̂) from the weighted least squares of the last α step, then refit the prior with the corrected variances
+        c = [sum(W[j, k] / (λ * s2[j] + σ2[k]) for k in 1:K) for j in 1:p]
+        Vα = inv(Symmetric(Γ * (c .* Γ')))
+        v .+= vec(sum(Γ .* (Vα * Γ); dims = 1))
+        mixture_lik!(Lik, logscale, r, v, σ2, 1.0)
+        π, obj = mixture_weights(Lik, logscale, free, prior; π0 = π)
+    end
+    post = ash_posterior(r, v, σ2, π)
     for j in controls #controls are fixed to zero
         post.mean[j] = post.sd[j] = 0.0
         post.lfsr[j] = post.lfdr[j] = 1.0
     end
-    e = evalues(r, λ .* s2, grid, π)
+    e = evalues(r, v, grid, π)
     e[controls] .= 0.0
     return merge((α = α, λ = λ, g = (σ = grid, π = π), loglik = obj, evalue = e), post)
 end
@@ -137,7 +156,8 @@ controls are optional negative controls; one covariate of interest (default the 
 function mouthwash(
         Y::AbstractMatrix{<:Real}, X::AbstractMatrix{<:Real}, q::Integer;
         controls::AbstractVector{<:Integer} = Int[], cov_of_interest::Integer = size(X, 2),
-        offset_factor::Bool = true, nullweight::Real = 10, estimate_λ::Bool = true, shrink_var::Symbol = :vash
+        offset_factor::Bool = true, nullweight::Real = 10, estimate_λ::Bool = true, shrink_var::Symbol = :vash,
+        alpha_uncertainty::Bool = true
     )
     rot = rotate(Y, X, [cov_of_interest])
     fa = factor_analysis(rot.Yres, q; offset_factor = offset_factor)
@@ -145,7 +165,10 @@ function mouthwash(
     β̃ = vec(rot.Yint) ./ R22
     d = size(rot.Yres, 1) - q - Int(offset_factor) #residual degrees of freedom of the variances
     s = sqrt.(shrink_variances(fa.σ2, d, shrink_var)) ./ abs(R22)
-    fit = mouthwash_fit(β̃, s, fa.F, collect(controls); nullweight = nullweight, estimate_λ = estimate_λ)
+    fit = mouthwash_fit(
+        β̃, s, fa.F, collect(controls); nullweight = nullweight, estimate_λ = estimate_λ,
+        alpha_uncertainty = alpha_uncertainty
+    )
     return MouthwashFit(
         β̃, s, fit.α, fit.λ, fit.g, fit.loglik, fit.mean, fit.sd, fit.lfsr, fit.lfdr,
         cumulative_rate(fit.lfsr), cumulative_rate(fit.lfdr), fit.evalue, collect(controls),

@@ -120,7 +120,8 @@ the variances of M itself are too small in the residual rows that are shrunk tow
 function pln_mouthwash(
         Y::AbstractMatrix{<:Integer}, X::AbstractMatrix{<:Real}, q::Integer;
         controls::AbstractVector{<:Integer} = Int[], cov_of_interest::Integer = size(X, 2),
-        offset_factor::Bool = true, nullweight::Real = 10, estimate_λ::Bool = true, kwargs...
+        offset_factor::Bool = true, nullweight::Real = 10, estimate_λ::Bool = true, alpha_uncertainty::Bool = true,
+        kwargs...
     )
     fit = pln(Y, X, q; offset_factor = offset_factor, kwargs...)
     k = size(X, 2)
@@ -130,7 +131,10 @@ function pln_mouthwash(
     β̃ = vec(qint' * fit.M) ./ R22
     λcount = exp.(fit.offsets .+ fit.μ .+ fit.σ2' ./ 2)
     s = sqrt.(vec(sum(qint .^ 2 .* (fit.σ2' .+ 1 ./ λcount); dims = 1))) ./ abs(R22)
-    mw = mouthwash_fit(β̃, s, fit.Γ, collect(controls); nullweight = nullweight, estimate_λ = estimate_λ)
+    mw = mouthwash_fit(
+        β̃, s, fit.Γ, collect(controls); nullweight = nullweight, estimate_λ = estimate_λ,
+        alpha_uncertainty = alpha_uncertainty
+    )
     return (
         pln = fit,
         mouthwash = MouthwashFit(
