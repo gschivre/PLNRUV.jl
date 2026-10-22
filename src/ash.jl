@@ -194,3 +194,42 @@ function ash(r::AbstractVector{<:Real}, s::AbstractVector{<:Real}; nullweight::R
     post = ash_posterior(r, s2, σ2, π)
     return AshFit(collect(grid), π, obj, post.mean, post.sd, post.lfsr, post.lfdr, cumulative_rate(post.lfsr), cumulative_rate(post.lfdr))
 end
+
+"""
+    evalues(r, v, σ, π)
+
+compound e-values of Ramdas A. & Wang R., Hypothesis testing with e-values (2024), Theorem 9.21 / Ignatiadis N.,
+Wang R. & Ramdas A., arXiv:2409.19812 (2024): for rⱼ ~ N(βⱼ, vⱼ) and the prior Σₖ πₖ N(0, σₖ²) (σ₁ = 0 the point
+mass), the likelihood ratio of the non-null mixture to the null, eⱼ = qⱼ(rⱼ) / N(rⱼ; 0, vⱼ) with
+qⱼ = Σₖ₌₂ πₖ N(0, vⱼ + σₖ²) / (1 - π₁), equivalently eⱼ = π₁ / (1 - π₁) × (1 - lfdrⱼ) / lfdrⱼ;
+with an estimated prior they are asymptotically valid compound e-values
+"""
+function evalues(r::AbstractVector{<:Real}, v::AbstractVector{<:Real}, σ::AbstractVector{<:Real}, π::AbstractVector{<:Real})
+    π0 = π[1]
+    e = zeros(length(r))
+    for j in eachindex(r)
+        l0 = lognormpdf(r[j], v[j])
+        num = sum(π[k] * exp(lognormpdf(r[j], v[j] + σ[k]^2) - l0) for k in 2:length(π); init = 0.0)
+        e[j] = num / max(1 - π0, 1.0e-300)
+    end
+    return e
+end
+
+"""
+    ebh(e; level = 0.05)
+
+e-BH procedure of Wang R. & Ramdas A., J. R. Stat. Soc. B (2022): reject the k* hypotheses with the largest
+e-values, k* = max{k : k e₍ₖ₎ / K ≥ 1 / level}; controls the FDR under arbitrary dependence for compound e-values.
+Return a Boolean vector of discoveries
+"""
+function ebh(e::AbstractVector{<:Real}; level::Real = 0.05)
+    K = length(e)
+    o = sortperm(e; rev = true)
+    kstar = 0
+    for k in 1:K
+        k * e[o[k]] / K >= 1 / level && (kstar = k)
+    end
+    disc = falses(K)
+    disc[o[1:kstar]] .= true
+    return disc
+end

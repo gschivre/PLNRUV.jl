@@ -89,6 +89,26 @@ using PLNRUV, Aqua, Test, Random, Distributions, Statistics
         @test z.π[1] > 0.95 && maximum(abs, z.mean) < 0.1
     end
 
+    @testset "compound e-values and e-BH" begin
+        rng = Xoshiro(13)
+        p = 5_000
+        β = (rand(rng, p) .< 0.2) .* randn(rng, p) .* 3
+        s = fill(0.5, p)
+        r = β .+ s .* randn(rng, p)
+        a = ash(r, s)
+        e = evalues(r, s .^ 2, a.σ, a.π)
+        @test all(>=(0), e)
+        #e = π₀ / (1 - π₀) × (1 - lfdr) / lfdr
+        @test e ≈ a.π[1] / (1 - a.π[1]) .* (1 .- a.lfdr) ./ a.lfdr rtol = 1.0e-6
+        #under the null (a fixed prior) the e-values average to at most one
+        null = evalues(0.5 .* randn(rng, 200_000), fill(0.25, 200_000), a.σ, a.π)
+        @test mean(null) < 1.05
+        disc = ebh(e; level = 0.05)
+        @test count(disc) > 100 && mean(β[disc] .== 0) < 0.05
+        @test ebh([100.0, 1.0, 1.0, 1.0]; level = 0.1) == [true, false, false, false] #1 × 100 / 4 ≥ 10
+        @test !any(ebh(ones(10)))
+    end
+
     @testset "variance shrinkage" begin
         rng = Xoshiro(8)
         p, d = 3_000, 6

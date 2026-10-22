@@ -13,7 +13,7 @@ export read_gct, filter_genes
 export surrogate_factors, assign_groups, thin_counts, thin_2group
 export log_ratio
 export ruvb, summarize, lfsr, rhat, ess
-export ash, mouthwash, factor_analysis
+export ash, mouthwash, factor_analysis, evalues, ebh
 export pln, pln_mouthwash, pln_ruvb
 export squeeze_var, vash
 

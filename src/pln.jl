@@ -135,7 +135,7 @@ function pln_mouthwash(
         pln = fit,
         mouthwash = MouthwashFit(
             β̃, s, mw.α, mw.λ, mw.g, mw.loglik, mw.mean, mw.sd, mw.lfsr, mw.lfdr,
-            cumulative_rate(mw.lfsr), cumulative_rate(mw.lfdr), collect(controls),
+            cumulative_rate(mw.lfsr), cumulative_rate(mw.lfdr), mw.evalue, collect(controls),
         ),
     )
 end

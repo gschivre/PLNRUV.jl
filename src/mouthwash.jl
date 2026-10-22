@@ -106,7 +106,9 @@ function mouthwash_fit(β̃, s, Γ, controls; nullweight = 10, estimate_λ = tru
         post.mean[j] = post.sd[j] = 0.0
         post.lfsr[j] = post.lfdr[j] = 1.0
     end
-    return merge((α = α, λ = λ, g = (σ = grid, π = π), loglik = obj), post)
+    e = evalues(r, λ .* s2, grid, π)
+    e[controls] .= 0.0
+    return merge((α = α, λ = λ, g = (σ = grid, π = π), loglik = obj, evalue = e), post)
 end
 
 struct MouthwashFit
@@ -122,6 +124,7 @@ struct MouthwashFit
     lfdr::Vector{Float64}
     svalue::Vector{Float64}
     qvalue::Vector{Float64}
+    evalue::Vector{Float64} #compound e-values (use with ebh for FDR control under dependence)
     controls::Vector{Int}
 end
 
@@ -145,6 +148,6 @@ function mouthwash(
     fit = mouthwash_fit(β̃, s, fa.F, collect(controls); nullweight = nullweight, estimate_λ = estimate_λ)
     return MouthwashFit(
         β̃, s, fit.α, fit.λ, fit.g, fit.loglik, fit.mean, fit.sd, fit.lfsr, fit.lfdr,
-        cumulative_rate(fit.lfsr), cumulative_rate(fit.lfdr), collect(controls),
+        cumulative_rate(fit.lfsr), cumulative_rate(fit.lfdr), fit.evalue, collect(controls),
     )
 end
