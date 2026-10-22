@@ -73,7 +73,8 @@ function Base.show(io::IO, ::MIME"text/plain", fit::MouthwashFit; ntop::Integer 
     println(io)
     println(io, "  ", p, " genes (", length(fit.controls), " controls", isempty(fit.controls) ? ": confounders identified by sparsity" : "", ")")
     println(io, "  Confounders   α = [", join(fmt_x.(fit.α, 3), ", "), "] (first: compositional offset, if fitted) · variance inflation λ = ", fmt_x(fit.λ, 2))
-    println(io, "  Effect prior  π₀ = ", fmt_x(fit.g.π[1], 3), " (proportion of null genes) over a grid of ", length(fit.g.σ), " scales")
+    centre = fit.g.mode == 0 ? "" : string(", centred at the mode ", fmt_x(fit.g.mode, 3), " (shared shift of the non-null genes)")
+    println(io, "  Effect prior  π₀ = ", fmt_x(fit.g.π[1], 3), " (proportion of null genes) over a grid of ", length(fit.g.σ), " scales", centre)
     disc = est[fit.svalue[est] .< level]
     up = count(j -> fit.mean[j] > 0, disc)
     println(io, "  Discoveries   ", length(disc), " genes with s-value < ", level, " (", up, " up, ", length(disc) - up, " down)")

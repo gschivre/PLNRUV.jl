@@ -56,6 +56,30 @@ about ten steps, where EM can need thousands when the mixture components overlap
 The lfsr is preferred to the lfdr: a "discovery" of the wrong sign is an error too, and the lfsr does not depend on
 the exact mass at zero, which is hard to estimate.
 
+**A global change of transcription breaks unimodality at zero.** When most genes change together, as in a global
+increase of transcription measured against controls, the effects are a point mass at zero (the unchanged genes)
+plus a bump away from it, around a shared shift ``\mu``. A prior unimodal at zero can only reach the bump with wide
+components centred at zero, which also cover small values: they take mass from the null, ``\pi_0`` is
+underestimated, and the lfsr of the null genes is too small. On thinned GTEx with 60 % of the genes shifted by a
+log2 fold change of about 1, ash finds ``\hat\pi_0 \approx 0.22`` instead of 0.40 and the FDP at ``s < 0.05`` is
+about 9 %. (The CATE-based pipeline of Schivre et al. 2025 meets the same issue.) With `mode = :auto` the non-null
+part of the prior is centred at an estimated mode while the null stays at zero, where the controls put it:
+
+```math
+g(\beta) \;=\; \pi_0\, \delta_0 \;+\; \sum_{k=0}^{K} \pi_k\, \mathcal N(\beta;\, \mu,\, \sigma_k^2) .
+```
+
+This is ash's `mode = "estimate"` with one difference: ash moves the point mass to the mode too, which turns the bulk
+of changing genes into the reference, the assumption the controls are there to avoid. ``\mu`` maximises the
+marginal likelihood (golden-section search). It is used only when it improves the fit of genes it was not fitted
+on: the genes are split in two halves, both priors are fitted on one half and scored on the other, and the mode is
+kept when the held-out log-likelihood gain exceeds `mode_threshold = 0.05` per gene. Otherwise the prior is plain
+ash. On thinned GTEx the gain is at most 0.003 per gene without a shared shift and at most 0.016 with residual
+confounding (pure nulls, the controls, give ± 0.01), against 0.24–0.33 for a shift of 1 in 60 % of the genes and
+0.06–0.14 for a shift of 0.5 in 40 %. A shift too small to pass the gate falls back to ash. In MOUTHWASH the
+mode is estimated only with controls: without them, a shift shared by the genes cannot be told apart from the
+compositional offset.
+
 ## 4.2 MOUTHWASH: confounders and effects together
 
 After the rotation of [§3](confounders.md), each gene gives a confounded estimate

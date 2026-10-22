@@ -69,16 +69,17 @@ function ash_grid(r::AbstractVector{<:Real}, s::AbstractVector{<:Real}; mult::Re
     return [0.0; σmin .* mult .^ (0:(K - 1))]
 end
 
-#component likelihoods Lⱼₖ = N(rⱼ; 0, λ sⱼ² + σₖ²) scaled by their row maximum (returned in logscale)
-#with ν (degrees of freedom of each sⱼ) the normal is replaced by a t with scale √(λ sⱼ² + σₖ²), the usual
-#approximation of the convolution of a t likelihood with a normal mixture (exact for the point mass);
-#with a NoiseModel N, Lⱼₖ = Σₘ wⱼₘ t(rⱼ; νⱼₘ, λ vⱼₘ + σₖ²)
-mixture_lik!(Lik, logscale, r, s2, σ2, λ; ν = Inf) = mixture_lik!(Lik, logscale, r, NoiseModel(s2, ν), σ2, λ)
-function mixture_lik!(Lik, logscale, r, N::NoiseModel, σ2, λ)
+#component likelihoods Lⱼₖ = N(rⱼ; mₖ, λ sⱼ² + σₖ²) scaled by their row maximum (returned in logscale), mₖ the
+#component means (0 for ash, see mode_components); with ν (degrees of freedom of each sⱼ) the normal is replaced by
+#a t with scale √(λ sⱼ² + σₖ²), the usual approximation of the convolution of a t likelihood with a normal mixture
+#(exact for the point masses); with a NoiseModel N, Lⱼₖ = Σₘ wⱼₘ t(rⱼ - mₖ; νⱼₘ, λ vⱼₘ + σₖ²)
+mixture_lik!(Lik, logscale, r, s2, σ2, λ; ν = Inf, means = zeros(length(σ2))) =
+    mixture_lik!(Lik, logscale, r, NoiseModel(s2, ν), σ2, λ; means = means)
+function mixture_lik!(Lik, logscale, r, N::NoiseModel, σ2, λ; means = zeros(length(σ2)))
     for j in eachindex(r)
         m = -Inf
         for k in eachindex(σ2)
-            Lik[j, k] = lognoise(N, j, r[j], σ2[k], λ)
+            Lik[j, k] = lognoise(N, j, r[j] - means[k], σ2[k], λ)
             m = max(m, Lik[j, k])
         end
         logscale[j] = m
@@ -179,11 +180,12 @@ function mixture_weights(Lik, logscale, free, prior; π0 = fill(1 / size(Lik, 2)
     return π, mixture_objective(π, Lik, logscale, free, prior)
 end
 
-#posterior summaries of βⱼ given rⱼ ~ N(βⱼ, vⱼ) and the prior Σₖ πₖ N(0, σₖ²)
+#posterior summaries of βⱼ given rⱼ ~ N(βⱼ, vⱼ) and the prior Σₖ πₖ N(mₖ, σₖ²)
 #(with a t likelihood the component weights use the t density and the conditional posteriors the normal ones;
-#with a NoiseModel the weights run over the pairs of prior and noise components)
-ash_posterior(r, v, σ2, π; ν = Inf) = ash_posterior(r, NoiseModel(v, ν), σ2, π)
-function ash_posterior(r, N::NoiseModel, σ2, π)
+#with a NoiseModel the weights run over the pairs of prior and noise components); the lfsr counts the point mass at
+#zero on both sides, a point mass at mₖ ≠ 0 on the side of its sign
+ash_posterior(r, v, σ2, π; ν = Inf, means = zeros(length(σ2))) = ash_posterior(r, NoiseModel(v, ν), σ2, π; means = means)
+function ash_posterior(r, N::NoiseModel, σ2, π; means = zeros(length(σ2)))
     p = length(r)
     K, M = length(π), size(N.w, 2)
     out = (mean = zeros(p), sd = zeros(p), lfsr = zeros(p), lfdr = zeros(p))
@@ -191,7 +193,7 @@ function ash_posterior(r, N::NoiseModel, σ2, π)
     for j in 1:p
         for k in 1:K, l in 1:M
             w[k, l] = π[k] == 0 || N.w[j, l] == 0 ? -Inf :
-                log(π[k]) + log(N.w[j, l]) + logtpdf(r[j], N.v[j, l] + σ2[k], N.ν[j, l], N.c[j, l])
+                log(π[k]) + log(N.w[j, l]) + logtpdf(r[j] - means[k], N.v[j, l] + σ2[k], N.ν[j, l], N.c[j, l])
         end
         w .= exp.(w .- maximum(w))
         w ./= sum(w)
@@ -199,11 +201,14 @@ function ash_posterior(r, N::NoiseModel, σ2, π)
         for k in 1:K, l in 1:M
             w[k, l] == 0 && continue
             if σ2[k] == 0
-                pzero += w[k, l]
+                mk = means[k]
+                mk == 0 ? (pzero += w[k, l]) : mk > 0 ? (ppos += w[k, l]) : (pneg += w[k, l])
+                m1 += w[k, l] * mk
+                m2 += w[k, l] * mk^2
             else
                 v = N.v[j, l]
                 vk = σ2[k] * v / (σ2[k] + v)
-                mk = σ2[k] / (σ2[k] + v) * r[j]
+                mk = (σ2[k] * r[j] + v * means[k]) / (σ2[k] + v)
                 m1 += w[k, l] * mk
                 m2 += w[k, l] * (vk + mk^2)
                 pk = cdf(Normal(), -mk / sqrt(vk))
@@ -231,8 +236,76 @@ function cumulative_rate(x::AbstractVector{<:Real})
     return out
 end
 
+#prior components (variances, means): ash's point mass and scale mixture at zero, or with a mode μ ≠ 0 the point
+#mass at zero (the null) followed by the grid of scales centred at μ (its first scale, 0, a point mass at μ):
+#g = π₀ δ₀ + Σₖ πₖ N(μ, σₖ²), unimodal around μ apart from the null, as ash with mode = "estimate" but with the null
+#kept at zero (where the controls put it)
+mode_components(grid, μ) = μ == 0 ? (grid .^ 2, zeros(length(grid))) : ([0.0; grid .^ 2], [0.0; fill(float(μ), length(grid))])
+
+#mixture weights fitted on the rows `rows` for the components (σ2, means), with the component likelihoods of all rows
+function prior_fit(r, N::NoiseModel, λ, rows, σ2, means, nullweight)
+    Lik = zeros(length(r), length(σ2))
+    logscale = zeros(length(r))
+    mixture_lik!(Lik, logscale, r, N, σ2, λ; means = means)
+    π, obj = mixture_weights(Lik, logscale, rows, [nullweight; ones(length(σ2) - 1)])
+    return π, obj, Lik, logscale
+end
+
+#mode of the non-null part: golden-section search of the marginal likelihood between the 1% and 99% quantiles of r
+function estimate_mode(r, N::NoiseModel, λ, rows, grid, nullweight)
+    obj(μ) = prior_fit(r, N, λ, rows, mode_components(grid, μ)..., nullweight)[2]
+    g = (sqrt(5) - 1) / 2
+    a, b = quantile(r[rows], [0.01, 0.99])
+    tol = 1.0e-3 * (b - a)
+    c, d = b - g * (b - a), a + g * (b - a)
+    fc, fd = obj(c), obj(d)
+    while b - a > tol
+        if fc > fd
+            b, d, fd = d, c, fc
+            c = b - g * (b - a)
+            fc = obj(c)
+        else
+            a, c, fc = c, d, fd
+            d = a + g * (b - a)
+            fd = obj(d)
+        end
+    end
+    return (a + b) / 2
+end
+
+#gate of the mode: held-out log-likelihood gain per gene of the prior with an estimated mode over the prior at zero,
+#by two-fold cross-validation over the genes (both priors fitted on one half, scored on the other); a mode fitted to
+#noise or to residual confounding barely improves held-out genes (≤ 0.02 per gene on thinned GTEx, where pure nulls
+#give ± 0.01), a global shift of transcription does (≥ 0.24 for a log2 shift of 1 in 60 % of the genes, 0.06–0.14
+#for 0.5 in 40 %)
+function mode_gain(r, N::NoiseModel, λ, rows, grid, nullweight; rng::AbstractRNG = Xoshiro(1))
+    perm = shuffle(rng, collect(rows))
+    h = length(perm) ÷ 2
+    gain = 0.0
+    for (tr, te) in ((perm[1:h], perm[(h + 1):end]), (perm[(h + 1):end], perm[1:h]))
+        π0, _, L0, ls0 = prior_fit(r, N, λ, tr, mode_components(grid, 0.0)..., nullweight)
+        μ = estimate_mode(r, N, λ, tr, grid, nullweight)
+        π1, _, L1, ls1 = prior_fit(r, N, λ, tr, mode_components(grid, μ)..., nullweight)
+        for j in te
+            gain += log(max(dot(view(L1, j, :), π1), 1.0e-300)) + ls1[j] - log(max(dot(view(L0, j, :), π0), 1.0e-300)) - ls0[j]
+        end
+    end
+    return gain / length(perm)
+end
+
+#prior mode of the non-null effects: :zero (ash), :estimate, or :auto (estimated when its held-out gain per gene
+#exceeds threshold, see mode_gain); return the mode and the gain (NaN when not computed)
+function choose_mode(mode::Symbol, r, N::NoiseModel, λ, rows, grid, nullweight, threshold)
+    mode === :zero && return 0.0, NaN
+    mode in (:auto, :estimate) || throw(ArgumentError("unknown mode $mode (use :auto, :zero or :estimate)"))
+    gain = mode === :auto ? mode_gain(r, N, λ, rows, grid, nullweight) : NaN
+    mode === :auto && gain <= threshold && return 0.0, gain
+    return estimate_mode(r, N, λ, rows, grid, nullweight), gain
+end
+
 struct AshFit
-    σ::Vector{Float64} #prior standard deviations (σ[1] = 0 is the point mass)
+    σ::Vector{Float64} #prior standard deviations (σ[1] = 0 is the point mass at zero)
+    μ::Vector{Float64} #prior means (all zero unless a mode was estimated)
     π::Vector{Float64} #prior weights
     loglik::Float64 #penalised log-likelihood at the optimum
     mean::Vector{Float64}
@@ -244,21 +317,24 @@ struct AshFit
 end
 
 """
-    ash(r, s; nullweight = 10, grid = ash_grid(r, s))
+    ash(r, s; nullweight = 10, grid = ash_grid(r, s), df = Inf, mode = :auto, mode_threshold = 0.05)
 
-ash for estimates r with standard errors s, nullweight is the Dirichlet weight of the point mass
+ash for estimates r with standard errors s, nullweight is the Dirichlet weight of the point mass at zero
+the non-null part of the prior is unimodal at zero (mode = :zero) or around an estimated mode μ, the null staying at
+zero (mode = :estimate); mode = :auto estimates μ only when it raises the held-out log-likelihood by more than
+mode_threshold per estimate (a shift shared by many effects, such as a global change of transcription)
 """
-function ash(r::AbstractVector{<:Real}, s::AbstractVector{<:Real}; nullweight::Real = 10, grid = ash_grid(r, s), df = Inf)
+function ash(
+        r::AbstractVector{<:Real}, s::AbstractVector{<:Real}; nullweight::Real = 10, grid = ash_grid(r, s), df = Inf,
+        mode::Symbol = :auto, mode_threshold::Real = 0.05
+    )
     @assert length(r) == length(s) && all(>(0), s)
-    σ2 = grid .^ 2
-    s2 = s .^ 2
-    Lik = zeros(length(r), length(σ2))
-    logscale = zeros(length(r))
-    mixture_lik!(Lik, logscale, r, s2, σ2, 1.0; ν = df)
-    prior = [nullweight; ones(length(σ2) - 1)]
-    π, obj = mixture_weights(Lik, logscale, eachindex(r), prior)
-    post = ash_posterior(r, s2, σ2, π; ν = df)
-    return AshFit(collect(grid), π, obj, post.mean, post.sd, post.lfsr, post.lfdr, cumulative_rate(post.lfsr), cumulative_rate(post.lfdr))
+    N = NoiseModel(s .^ 2, df)
+    μ, _ = choose_mode(mode, r, N, 1.0, eachindex(r), grid, nullweight, mode_threshold)
+    σ2, means = mode_components(grid, μ)
+    π, obj, _, _ = prior_fit(r, N, 1.0, eachindex(r), σ2, means, nullweight)
+    post = ash_posterior(r, N, σ2, π; means = means)
+    return AshFit(sqrt.(σ2), means, π, obj, post.mean, post.sd, post.lfsr, post.lfdr, cumulative_rate(post.lfsr), cumulative_rate(post.lfdr))
 end
 
 """
@@ -270,14 +346,14 @@ mass), the likelihood ratio of the non-null mixture to the null, eⱼ = qⱼ(r�
 qⱼ = Σₖ₌₂ πₖ N(0, vⱼ + σₖ²) / (1 - π₁), equivalently eⱼ = π₁ / (1 - π₁) × (1 - lfdrⱼ) / lfdrⱼ;
 with an estimated prior they are asymptotically valid compound e-values
 """
-evalues(r::AbstractVector{<:Real}, v::AbstractVector{<:Real}, σ::AbstractVector{<:Real}, π::AbstractVector{<:Real}; ν = Inf) =
-    evalues(r, NoiseModel(v, ν), σ, π)
-function evalues(r::AbstractVector{<:Real}, N::NoiseModel, σ::AbstractVector{<:Real}, π::AbstractVector{<:Real})
+evalues(r::AbstractVector{<:Real}, v::AbstractVector{<:Real}, σ::AbstractVector{<:Real}, π::AbstractVector{<:Real}; ν = Inf, means = zeros(length(σ))) =
+    evalues(r, NoiseModel(v, ν), σ, π; means = means)
+function evalues(r::AbstractVector{<:Real}, N::NoiseModel, σ::AbstractVector{<:Real}, π::AbstractVector{<:Real}; means = zeros(length(σ)))
     π0 = π[1]
     e = zeros(length(r))
     for j in eachindex(r)
         l0 = lognoise(N, j, r[j], 0.0)
-        num = sum(π[k] * exp(lognoise(N, j, r[j], σ[k]^2) - l0) for k in 2:length(π); init = 0.0)
+        num = sum(π[k] * exp(lognoise(N, j, r[j] - means[k], σ[k]^2) - l0) for k in 2:length(π); init = 0.0)
         e[j] = num / max(1 - π0, 1.0e-300)
     end
     return e

@@ -115,18 +115,20 @@ function pln(
 end
 
 """
-    pln_mouthwash(Y, X, q; controls = Int[], cov_of_interest = size(X, 2), offset_factor = true, nullweight = 10, estimate_λ = true, kwargs...)
+    pln_mouthwash(Y, X, q; controls = Int[], cov_of_interest = size(X, 2), offset_factor = true, nullweight = 10, estimate_λ = true, likelihood = :t, mode = :auto, kwargs...)
 
 empirical Bayes branch: PLN fit (stage 1) followed by MOUTHWASH (stage 2)
 β̃ⱼ = q'Mⱼ / R₂₂ with q the column of Q for the covariate of interest; its standard error uses the latent-scale
 variance of each cell vᵢⱼ = σⱼ² + 1 / λᵢⱼ (lognormal overdispersion + Poisson noise, λᵢⱼ the expected count),
 the variances of M itself are too small in the residual rows that are shrunk toward the fitted factors
+with controls, mode = :auto centres the non-null part of the effect prior at an estimated mode when a shift shared by
+many genes (a global change of transcription) raises the held-out likelihood (see ash); the null stays at zero
 """
 function pln_mouthwash(
         Y::AbstractMatrix{<:Integer}, X::AbstractMatrix{<:Real}, q::Integer;
         controls::AbstractVector{<:Integer} = Int[], cov_of_interest::Integer = size(X, 2),
         offset_factor::Bool = true, nullweight::Real = 10, estimate_λ::Bool = true, alpha_uncertainty::Bool = true,
-        likelihood::Symbol = :t, kwargs...
+        likelihood::Symbol = :t, mode::Symbol = :auto, mode_threshold::Real = 0.05, kwargs...
     )
     fit = pln(Y, X, q; offset_factor = offset_factor, kwargs...)
     k = size(X, 2)
@@ -142,7 +144,8 @@ function pln_mouthwash(
     noise = noise_model(likelihood, s .^ 2, fit.df, fit.σ2mix.w, mixv, fit.σ2mix.df)
     mw = mouthwash_fit(
         β̃, s, fit.Γ, collect(controls); nullweight = nullweight, estimate_λ = estimate_λ,
-        alpha_uncertainty = alpha_uncertainty, noise = noise
+        alpha_uncertainty = alpha_uncertainty, noise = noise,
+        mode = mode, mode_threshold = mode_threshold
     )
     return (
         pln = fit,

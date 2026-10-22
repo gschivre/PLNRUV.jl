@@ -87,6 +87,31 @@ using PLNRUV, Aqua, Test, Random, Distributions, Statistics
         #pure noise: everything shrunk to zero
         z = ash(randn(rng, 500), ones(500))
         @test z.π[1] > 0.95 && maximum(abs, z.mean) < 0.1
+        #sparse symmetric effects: the gate keeps the prior unimodal at zero (plain ash)
+        @test all(iszero, a.μ)
+    end
+
+    @testset "ash with a shifted mode (global change of transcription)" begin
+        rng = Xoshiro(11)
+        p = 3_000
+        β = (rand(rng, p) .< 0.6) .* (1 .+ 0.3 .* randn(rng, p)) #40 % null, 60 % shifted around 1
+        s = fill(0.3, p)
+        r = β .+ s .* randn(rng, p)
+        fdp(f) = mean(β[f.svalue .< 0.05] .== 0)
+        auto, zero = ash(r, s), ash(r, s; mode = :zero)
+        @test abs(auto.μ[end] - 1) < 0.1 && auto.μ[1] == 0 && auto.σ[1] == 0 #null kept at zero, mode at the shift
+        @test abs(auto.π[1] - 0.4) < 0.05 #π₀ recovered
+        @test zero.π[1] < auto.π[1] - 0.05 #the unimodal prior takes null mass for the shifted effects
+        @test fdp(auto) < 0.06 && fdp(auto) < fdp(zero)
+        @test PLNRUV.mode_gain(r, PLNRUV.NoiseModel(s .^ 2), 1.0, 1:p, PLNRUV.ash_grid(r, s), 10) > 0.05
+        #MOUTHWASH: the mode is estimated with controls, not without them (it would be the compositional offset)
+        c = 300
+        βc = [zeros(c); β[1:(p - c)]]
+        rc = βc .+ s .* randn(rng, p)
+        Γ = 0.1 .* randn(rng, 1, p)
+        fc = PLNRUV.mouthwash_fit(rc, s, Γ, 1:c)
+        @test abs(fc.g.mode - 1) < 0.1
+        @test PLNRUV.mouthwash_fit(rc, s, Γ, Int[]).g.mode == 0
     end
 
     @testset "compound e-values and e-BH" begin
