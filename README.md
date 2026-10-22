@@ -1,5 +1,11 @@
 # PLNRUV.jl
 
+[![Docs](https://img.shields.io/badge/docs-manual-blue.svg)](docs/src/index.md)
+[![Documentation](https://github.com/gschivre/PLNRUV.jl/actions/workflows/Documentation.yml/badge.svg)](https://github.com/gschivre/PLNRUV.jl/actions/workflows/Documentation.yml)
+[![CI](https://github.com/gschivre/PLNRUV.jl/actions/workflows/CI.yml/badge.svg)](https://github.com/gschivre/PLNRUV.jl/actions/workflows/CI.yml)
+[![Aqua QA](https://raw.githubusercontent.com/JuliaTesting/Aqua.jl/master/badge.svg)](https://github.com/JuliaTesting/Aqua.jl)
+[![Code Style: Runic](https://img.shields.io/badge/code_style-%E1%9A%B1%E1%9A%A2%E1%9A%BE%E1%9B%81%E1%9A%B2-black)](https://github.com/fredrikekre/Runic.jl)
+
 *Differential expression from RNA-seq counts, adjusted for hidden confounders and for the compositional nature of
 sequencing.*
 

@@ -1,4 +1,4 @@
-using PLNRUV, Test, Random, Distributions, Statistics
+using PLNRUV, Aqua, Test, Random, Distributions, Statistics
 
 @testset "PLNRUV" begin
     @testset "read_gct" begin
@@ -177,5 +177,9 @@ using PLNRUV, Test, Random, Distributions, Statistics
         @test cor(s.ash_mean[1, nc], β[nc]) > 0.85
         disc = nc[s.ash_svalue[1, nc] .< 0.05]
         @test length(disc) > 30 && mean(β[disc] .== 0) < 0.1
+    end
+
+    @testset "Code quality (Aqua)" begin
+        Aqua.test_all(PLNRUV)
     end
 end

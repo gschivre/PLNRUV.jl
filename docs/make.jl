@@ -2,6 +2,7 @@
 #   julia --project=docs -e 'using Pkg; Pkg.instantiate()'   (once; PLNRUV is a [sources] path dependency)
 #   julia --project=docs docs/make.jl
 # The pages are in docs/src; the manual is written to docs/build/index.html.
+# Deployment to GitHub Pages runs only when DOCS_DEPLOY=true (a repository variable, for when Pages is available).
 
 using Documenter, PLNRUV
 
@@ -11,7 +12,7 @@ makedocs(;
     sitename = "PLNRUV.jl",
     modules = [PLNRUV],
     authors = "Geoffrey Schivre",
-    remotes = nothing, #not a git repository yet: no source links
+    repo = Remotes.GitHub("gschivre", "PLNRUV.jl"),
     format = Documenter.HTML(;
         prettyurls = get(ENV, "CI", "false") == "true", mathengine = Documenter.MathJax3(),
         size_threshold_ignore = ["api.md"]
@@ -35,3 +36,7 @@ makedocs(;
     checkdocs = :exports,
     warnonly = [:missing_docs, :cross_references],
 )
+
+if get(ENV, "DOCS_DEPLOY", "false") == "true"
+    deploydocs(; repo = "github.com/gschivre/PLNRUV.jl.git", devbranch = "main")
+end
