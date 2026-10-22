@@ -78,7 +78,7 @@ fit_free = pln_mouthwash(sim.counts, sim.X, 2)
 
 # fully Bayesian branch: Gibbs sampler on the latent PLN layer, then ash on the posterior
 out = pln_ruvb(sim.counts, sim.X, sim.controls, 2)
-post = summarize(out.fit)
+post = summarize(out)
 post.lower, post.upper       # credible intervals (flat prior on the effects)
 post.ash_mean, post.ash_svalue   # shrunk estimates and s-values, to declare discoveries
 ```

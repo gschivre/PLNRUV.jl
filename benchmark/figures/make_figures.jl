@@ -52,8 +52,9 @@ function benchmark_figure(rows)
     methods = [m for m in METHODS if any(r -> r["method"] == m[1], rows)]
     nm = length(methods)
     fig = Figure(; size = (1250, 260 + 230 * length(METRICS)), backgroundcolor = SURFACE, fontsize = 13)
+    panels = Matrix{Axis}(undef, length(METRICS), length(SCENARIOS))
     for (j, (sc, sctitle)) in enumerate(SCENARIOS), (i, (metric, mlabel)) in enumerate(METRICS)
-        ax = Axis(
+        ax = panels[i, j] = Axis(
             fig[i, j];
             backgroundcolor = SURFACE, xgridcolor = GRID, ygridvisible = false,
             yticks = (1:nm, [m[2] for m in methods]), yreversed = true,
@@ -74,6 +75,8 @@ function benchmark_figure(rows)
         metric === :power && xlims!(ax, -0.02, 1.0)
         (metric === :fdp || metric === :rmse) && xlims!(ax; low = 0)
     end
+    #the scenarios of a metric share the x-axis
+    foreach(i -> linkxaxes!(panels[i, :]...), axes(panels, 1))
     Legend(
         fig[length(METRICS) + 1, 1:length(SCENARIOS)],
         [MarkerElement(; color = COLORS[f], marker = :circle, markersize = 10) for f in (:plnruv, :paper, :reference)],

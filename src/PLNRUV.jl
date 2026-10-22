@@ -12,7 +12,7 @@ using Distributions, LinearAlgebra, Random, SpecialFunctions, Statistics
 export read_gct, filter_genes
 export surrogate_factors, assign_groups, thin_counts, thin_2group
 export log_ratio
-export ruvb, summarize, lfsr
+export ruvb, summarize, lfsr, rhat, ess
 export ash, mouthwash, factor_analysis
 export pln, pln_mouthwash, pln_ruvb
 export squeeze_var, vash
@@ -21,11 +21,13 @@ include("io.jl")
 include("simulation.jl")
 include("transforms.jl")
 include("rotation.jl")
+include("diagnostics.jl")
 include("ruvb.jl")
 include("ash.jl")
 include("varshrink.jl")
 include("mouthwash.jl")
 include("pln.jl")
 include("plnruvb.jl")
+include("show.jl")
 
 end

@@ -29,8 +29,8 @@ end
     pln_ruvb(Y, X, controls, q; cov_of_interest = [size(X, 2)], offset_factor = true, offsets = log library sizes, a2 = 1, b2 = 1, ν = 2, τ = 2, burnin = 2500, nsample = 500, thin = 10, nchain = 4, rng)
 
 fully Bayesian RUVB on counts Y (samples x genes) through the Poisson-lognormal latent layer
-the chains start from the variational PLN fit (empirical Bayes branch); return an RUVBFit (see summarize)
-and the acceptance rate of the latent Metropolis-Hastings updates
+the chains start from the variational PLN fit (empirical Bayes branch); return an RUVBFit (see summarize) that
+also records the acceptance rate of the latent Metropolis-Hastings updates
 """
 function pln_ruvb(
         Y::AbstractMatrix{<:Integer}, X::AbstractMatrix{<:Real}, controls::AbstractVector{<:Integer}, q::Integer;
@@ -94,5 +94,5 @@ function pln_ruvb(
         end
     end
     foreach(wait, tasks)
-    return (fit = RUVBFit(β, collect(controls), collect(cov_of_interest)), acceptance = acceptance)
+    return RUVBFit(β, collect(controls), collect(cov_of_interest), acceptance)
 end

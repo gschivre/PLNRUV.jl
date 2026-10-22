@@ -118,7 +118,7 @@ function julia_methods(counts, X, controls, q; bayes = true)
     g = mouthwash(log_ratio(counts, controls), X, q; controls = controls)
     out["PLNRUV_gaussian_logratio"] = (g.mean ./ log(2), g.svalue)
     if bayes
-        s = summarize(pln_ruvb(counts, X, controls, q; burnin = 1_000, nsample = 250, thin = 4).fit)
+        s = summarize(pln_ruvb(counts, X, controls, q; burnin = 1_000, nsample = 250, thin = 4))
         m, sv = zeros(p), ones(p)
         est = setdiff(1:p, controls)
         m[est] .= s.ash_mean[1, est] ./ log(2)

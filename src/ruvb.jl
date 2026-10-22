@@ -14,6 +14,7 @@ struct RUVBFit
     β::Array{Float64, 4} #k₂ x p x nsample x nchain, controls are NaN (fixed to 0 by assumption)
     controls::Vector{Int}
     cov_of_interest::Vector{Int}
+    acceptance::Vector{Float64} #acceptance rate of the latent updates per chain (empty on a Gaussian scale)
 end
 
 #Gibbs sampler state of one chain
@@ -135,7 +136,7 @@ function ruvb(
         end
     end
     foreach(wait, tasks)
-    return RUVBFit(β, collect(controls), collect(cov_of_interest))
+    return RUVBFit(β, collect(controls), collect(cov_of_interest), Float64[])
 end
 
 """
@@ -148,7 +149,8 @@ lfsr(x::AbstractVector{<:Real}) = min(mean(>=(0), x), mean(<=(0), x))
 """
     summarize(fit::RUVBFit; level = 0.95, shrink = true)
 
-posterior summaries of the coefficients of interest (k₂ x p matrices, NaN for the controls)
+posterior summaries of the coefficients of interest (k₂ x p matrices, NaN for the controls), with the convergence
+of each coefficient (rank-normalised split-R̂ and bulk ESS)
 the flat prior of RUVB gives posterior means, sds, credible intervals and lfsr that behave like unshrunk estimates;
 with shrink = true they are also passed to ash, as in Gerard & Stephens: ash_mean, ash_lfsr and ash_svalue
 are the shrunk estimates and the error rates to use for discoveries
@@ -158,9 +160,11 @@ function summarize(fit::RUVBFit; level::Real = 0.95, shrink::Bool = true)
     draws = reshape(fit.β, k₂, p, S * C)
     α = (1 - level) / 2
     stat(f) = [isnan(draws[i, j, 1]) ? NaN : f(view(draws, i, j, :)) for i in 1:k₂, j in 1:p]
+    #convergence: rank-normalised split-R̂ and bulk ESS from the draws of each chain
+    conv(f) = [isnan(fit.β[i, j, 1, 1]) ? NaN : f(view(fit.β, i, j, :, :)) for i in 1:k₂, j in 1:p]
     out = (
         mean = stat(mean), sd = stat(std), lower = stat(x -> quantile(x, α)), upper = stat(x -> quantile(x, 1 - α)),
-        lfsr = stat(lfsr),
+        lfsr = stat(lfsr), rhat = conv(rhat), ess = conv(ess),
     )
     shrink || return out
     ash_mean, ash_lfsr, ash_svalue = fill(NaN, k₂, p), fill(NaN, k₂, p), fill(NaN, k₂, p)

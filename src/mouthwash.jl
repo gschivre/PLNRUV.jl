@@ -2,7 +2,8 @@
 #after the rotation, the rows of interest give β̃ⱼ = Y₂ⱼ / R₂₂ ~ N(βⱼ + Γⱼ'α, λ sⱼ²) with Γ the factor loadings
 #estimated on the residual rows; α (confounders, including the compositional offset if offset_factor = true),
 #the ash prior g on β and the variance inflation λ are estimated jointly by maximising the marginal likelihood
-#control genes have βⱼ = 0 (prior = point mass), otherwise α is identified by the sparsity of β through g
+#with control genes (βⱼ = 0) α is their generalised least squares fit (RUV-4), which stays valid when most genes
+#change (a global shift of transcription); without controls α is identified by the sparsity of β through g
 
 """
     factor_analysis(Y, q; offset_factor = true, iter = 5)
@@ -51,14 +52,19 @@ function update_λ(r, s2, σ2, W; lo = -5.0, hi = 5.0, tol = 1.0e-6)
 end
 
 #joint estimation of g, α and λ by block coordinate ascent:
-#π by EM/SQUAREM, α by weighted least squares (MM step), λ by a one-dimensional search
+#π by mix-SQP, α by weighted least squares (MM step; fixed by the controls when there are any), λ by a
+#one-dimensional search
 function mouthwash_fit(β̃, s, Γ, controls; nullweight = 10, estimate_λ = true, tol = 1.0e-7, maxiter = 500)
     p = length(β̃)
     s2 = s .^ 2
     free = setdiff(1:p, controls)
-    #initial α by least squares on the controls (or on all genes without controls)
-    init = isempty(controls) ? (1:p) : controls
-    α = Γ[:, init]' \ β̃[init]
+    #α from the controls only (weights 1 / sⱼ², λ cancels), or a starting value from all genes without controls
+    if isempty(controls)
+        α = Γ' \ β̃
+    else
+        ΓC = Γ[:, controls]
+        α = Symmetric(ΓC * (ΓC' ./ s2[controls])) \ (ΓC * (β̃[controls] ./ s2[controls]))
+    end
     λ = 1.0
     r = β̃ - Γ' * α
     grid = ash_grid(r[free], s[free])
@@ -87,10 +93,12 @@ function mouthwash_fit(β̃, s, Γ, controls; nullweight = 10, estimate_λ = tru
             W[j, :] .= 0.0
             W[j, 1] = 1.0
         end
-        #α: weighted least squares with weights cⱼ = Σₖ wⱼₖ / (λ sⱼ² + σₖ²)
-        c = [sum(W[j, k] / (λ * s2[j] + σ2[k]) for k in 1:K) for j in 1:p]
-        α = Symmetric(Γ * (c .* Γ')) \ (Γ * (c .* β̃))
-        r = β̃ - Γ' * α
+        #α (sparsity only): weighted least squares with weights cⱼ = Σₖ wⱼₖ / (λ sⱼ² + σₖ²)
+        if isempty(controls)
+            c = [sum(W[j, k] / (λ * s2[j] + σ2[k]) for k in 1:K) for j in 1:p]
+            α = Symmetric(Γ * (c .* Γ')) \ (Γ * (c .* β̃))
+            r = β̃ - Γ' * α
+        end
         estimate_λ && (λ = update_λ(r, s2, σ2, W))
     end
     post = ash_posterior(r, λ .* s2, σ2, π)
