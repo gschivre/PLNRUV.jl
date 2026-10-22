@@ -1,0 +1,11 @@
+/Manifest*.toml
+/benchmark/Manifest*.toml
+/docs/build/
+
+# count data (e.g. GTEx) are not distributed with the package
+*.gct
+*.gct.gz
+*.txt
+*.tsv
+*.csv
+/data/

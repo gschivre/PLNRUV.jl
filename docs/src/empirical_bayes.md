@@ -1,0 +1,125 @@
+# 4. Empirical Bayes: ash, MOUTHWASH and variance shrinkage
+
+A Bayesian answer needs a prior on the effects. Biologists are rightly wary of priors chosen by hand. Empirical Bayes
+removes the choice: with thousands of genes, the distribution of the effects can be *estimated* from the data, and
+then used as the prior of each gene. Three quantities are estimated this way: the distribution of the effects
+(ash), the confounders (MOUTHWASH), and the distribution of the variances (vash or limma).
+
+## 4.1 Adaptive shrinkage (ash)
+
+Start from estimates ``\hat\beta_j`` with standard errors ``s_j``: ``\hat\beta_j \sim \mathcal N(\beta_j, s_j^2)``.
+
+- **assumption** — the effects are drawn from a unimodal distribution centred at zero, written as a mixture of
+  normals with a point mass at zero (Stephens 2017):
+
+```math
+g(\beta) \;=\; \sum_{k=0}^{K} \pi_k\, \mathcal N(\beta;\, 0,\, \sigma_k^2),\qquad \sigma_0 = 0 .
+```
+
+The grid ``\sigma_1 < \dots < \sigma_K`` is fixed and dense: from ``\min_j s_j / 10`` to ``2\sqrt{\max_j
+(\hat\beta_j^2 - s_j^2)}``, in steps of ``\sqrt 2``. Only the weights ``\pi`` are estimated, so ``g`` can take almost
+any unimodal symmetric shape: spiky, heavy-tailed, or all mass at zero.
+
+The weights maximise the marginal likelihood, with a Dirichlet(10, 1, …, 1) penalty that favours the null component
+(the "nullweight"; it makes the false sign rate conservative):
+
+```math
+\hat\pi = \arg\max_{\pi \in \Delta}\; \sum_j \log \sum_k \pi_k\, \mathcal N\!\big(\hat\beta_j;\, 0,\, s_j^2 +
+\sigma_k^2\big) \;+\; 9 \log \pi_0 .
+```
+
+This is a concave problem over the simplex. It is solved by mix-SQP (Kim et al. 2020): sequential quadratic
+programming, where each step solves a small non-negative quadratic program by an active-set method. It converges in
+about ten steps, where EM can need thousands when the mixture components overlap.
+
+!!! details "Posterior of each effect"
+    Given ``\hat\pi``, the posterior of ``\beta_j`` is again a mixture. Component ``k`` has weight
+    ``w_{jk} \propto \hat\pi_k\,\mathcal N(\hat\beta_j; 0, s_j^2 + \sigma_k^2)`` and, for ``k \ge 1``, is
+    ``\mathcal N(m_{jk}, v_{jk})`` with ``v_{jk} = \sigma_k^2 s_j^2/(\sigma_k^2 + s_j^2)`` and
+    ``m_{jk} = \hat\beta_j\, \sigma_k^2/(\sigma_k^2 + s_j^2)``; component 0 is the point mass at zero. The posterior
+    mean is ``\sum_k w_{jk} m_{jk}``.
+
+**Outputs.**
+
+- the *posterior mean*, a shrunken estimate: a noisy estimate is pulled towards zero more than a precise one;
+- the **local false sign rate** (lfsr), the probability that we get the sign of ``\beta_j`` wrong if we report the
+  sign of its posterior mean:
+
+```math
+\text{lfsr}_j = \min\big\{P(\beta_j \ge 0 \mid \text{data}),\; P(\beta_j \le 0 \mid \text{data})\big\} ;
+```
+
+- the *s-value*, the average lfsr of all genes at least as significant. Declaring the genes with s-value below 0.05
+  controls the expected proportion of wrong signs among the discoveries at 5 %;
+- the local false discovery rate ``P(\beta_j = 0 \mid \text{data})`` and its q-value.
+
+The lfsr is preferred to the lfdr: a "discovery" of the wrong sign is an error too, and the lfsr does not depend on
+the exact mass at zero, which is hard to estimate.
+
+## 4.2 MOUTHWASH: confounders and effects together
+
+After the rotation of [§3](confounders.md), each gene gives a confounded estimate
+``\hat{\tilde\beta}_j \sim \mathcal N(\beta_j + \Gamma_j^\top\alpha,\; \lambda s_j^2)``. Gerard & Stephens (2020)
+estimate ``\alpha`` *inside* the ash likelihood:
+
+```math
+(\hat\pi, \hat\alpha, \hat\lambda) = \arg\max\;
+\sum_{j \notin C}\log\sum_k \pi_k\,\mathcal N\!\big(\hat{\tilde\beta}_j - \Gamma_j^\top\alpha;\; 0,\;
+\lambda s_j^2 + \sigma_k^2\big)
+\;+\; \sum_{j \in C}\log\mathcal N\!\big(\hat{\tilde\beta}_j - \Gamma_j^\top\alpha;\; 0,\; \lambda s_j^2\big)
+\;+\; 9\log\pi_0 .
+```
+
+The second sum is over the control genes, whose prior is the point mass at zero. With no controls, sparsity alone
+(the point mass of ``g``) identifies ``\alpha``. The **variance inflation** ``\lambda`` absorbs what the standard
+errors miss: mainly the uncertainty in the estimated loadings ``\Gamma_j`` and in ``\alpha``.
+
+The maximisation is a block coordinate ascent; each block increases the objective:
+
+1. ``\pi`` by mix-SQP, with ``\alpha`` and ``\lambda`` fixed;
+2. ``\alpha`` by weighted least squares, the weights being the posterior precisions ``c_j = \sum_k w_{jk} / (\lambda
+   s_j^2 + \sigma_k^2)`` (a minorise–maximise step);
+3. ``\lambda`` by a one-dimensional golden-section search.
+
+The effects are then shrunk by ash on the corrected estimates ``\hat{\tilde\beta}_j - \Gamma_j^\top\hat\alpha``, with
+standard errors ``\sqrt{\hat\lambda}\, s_j``.
+
+## 4.3 Variance shrinkage
+
+Each ``s_j`` rests on a variance estimated from few degrees of freedom: ``d = n - k - q - 1`` residual rows, about
+six for a 10-sample experiment. A gene that happens to have a small sample variance gets a large, spurious
+significance. Pooling the variances across genes fixes this.
+
+- **assumption** — the sample variances follow ``s_j^2 \mid \sigma_j^2 \sim \sigma_j^2\,\chi^2_d / d``.
+
+**limma** (Smyth 2004) puts one scaled inverse-``\chi^2`` prior on the variances, ``\sigma_j^2 \sim d_0 s_0^2 /
+\chi^2_{d_0}``. It estimates ``d_0`` and ``s_0^2`` from the moments of ``\log s_j^2``, and returns the posterior
+estimates
+
+```math
+\tilde s_j^2 = \frac{d_0 s_0^2 + d\, s_j^2}{d_0 + d} .
+```
+
+**vash** (Lu & Stephens 2016) does for the variances what ash does for the effects. The prior is a mixture of inverse
+gammas with a common scale ``c`` and a grid of shapes ``a_k``:
+
+```math
+\sigma_j^2 \sim \sum_k \pi_k\, \text{InvGamma}(a_k,\; a_k c),
+\qquad\text{so that}\qquad
+s_j^2 / c \;\sim\; \sum_k \pi_k\, F(d,\, 2a_k) .
+```
+
+limma is the one-component case. The mixture can fit variances that are bimodal or heavy-tailed, as overdispersions
+often are. The weights are estimated by mix-SQP, as in ash, and ``c`` by a golden-section search. The posterior
+variance is ``\tilde s_j^2 = 1 / \mathbb E[\sigma_j^{-2} \mid s_j^2]``, a mixture of gamma means.
+
+Both are available everywhere a variance is estimated (`shrink_var = :vash`, `:limma` or `:none`): in the Gaussian
+MOUTHWASH, and inside each M-step of the PLN fit, where the shrunk overdispersions also stabilise the E-step of
+low-count genes. vash is the default. On bimodal variances it beats limma, and on the low-count PLN simulations of
+[§8.4](validation.md) it gives the best-calibrated false sign rate.
+
+## Functions
+
+- [`ash`](@ref): adaptive shrinkage of estimates with standard errors.
+- [`mouthwash`](@ref): rotation, factor analysis, and the joint estimation of ``g``, ``\alpha`` and ``\lambda``.
+- [`squeeze_var`](@ref), [`vash`](@ref): variance shrinkage.
