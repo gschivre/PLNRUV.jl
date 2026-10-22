@@ -49,10 +49,15 @@ function pln_mstep(M, S2, QR, k, q, nfix, σ2, shrink_var, var_trend)
     Γ = D.Vt[1:q, :] ./ sqrt.(w)'
     fitted = [Mrot[1:k, :]; l0 .+ Lres * Γ]
     μ = QR.Q * fitted
-    #residual variances with n - k - q - nfix degrees of freedom, shrunk across genes
-    #(around their trend in the mean latent log-abundance with var_trend = true)
+    #residual variances, shrunk across genes (around their trend in the mean latent log-abundance with
+    #var_trend = true); the n - d = k + q + nfix dimensions removed by the fit only cost degrees of freedom to the
+    #extent that the cells carry information: with κᵢⱼ = 1 - Sᵢⱼ² / σⱼ² (0 when the posterior is the prior, 1 when
+    #the latent value is known) the denominator is n - (n - d) κ̄ⱼ, d for informative genes and n for genes whose
+    #cells carry none (there Mᵢⱼ = μᵢⱼ and Sᵢⱼ² = σⱼ², and dividing by d would multiply σⱼ² by n / d at every
+    #iteration: a runaway that broke the fit of low-count genes when d is small)
     d = n - k - q - nfix
-    σ2 = max.(vec(sum(abs2, M - μ; dims = 1) + sum(S2; dims = 1)) ./ d, 1.0e-8)
+    κ = vec(mean(clamp.(1 .- S2 ./ σ2', 0.0, 1.0); dims = 1))
+    σ2 = max.(vec(sum(abs2, M - μ; dims = 1) + sum(S2; dims = 1)) ./ (n .- (n - d) .* κ), 1.0e-8)
     shrunk = shrink_variances(σ2, d, shrink_var; covariate = var_trend ? vec(mean(μ; dims = 1)) : nothing)
     B = UpperTriangular(QR.R) \ Mrot[1:k, :]
     return μ, shrunk.s2, B, nfix > 0 ? [ones(1, p); Γ] : Γ, shrunk.df, shrunk.mix

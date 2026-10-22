@@ -1,5 +1,5 @@
 #figures of the GTEx benchmark (benchmark/results/gtex_benchmark.csv)
-#run: julia --project=benchmark/figures benchmark/figures/make_figures.jl
+#run: julia --project=benchmark/figures benchmark/figures/make_figures.jl [methods to leave out, e.g. PLNRUV_bayes]
 #writes docs/src/figures/benchmark.png
 using CairoMakie, Statistics
 
@@ -92,7 +92,8 @@ function benchmark_figure(rows)
     return fig
 end
 
-rows = read_rows(CSV)
+#methods left out of the figure (rows kept in the CSV), e.g. a branch whose rows are out of date
+rows = filter(r -> !(r["method"] in ARGS), read_rows(CSV))
 mkpath(OUT)
 fig = benchmark_figure(rows)
 save(joinpath(OUT, "benchmark.png"), fig; px_per_unit = 2)
