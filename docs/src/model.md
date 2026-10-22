@@ -81,9 +81,9 @@ The package offers two branches, which share the model and differ in how they ha
 
 | | empirical Bayes ([§4](empirical_bayes.md), [§5](pln.md)) | fully Bayesian ([§6](bayes.md)) |
 |---|---|---|
-| counts | PLN, variational EM | Gaussian scale (log-ratios); PLN layer planned |
+| counts | PLN, variational EM | PLN, Gibbs sampler with Metropolis–Hastings latent updates |
 | confounders ``\alpha``, loadings ``\Gamma`` | point estimates | integrated out by MCMC |
-| prior on the effects | estimated from the data (ash) | flat (RUVB) |
+| prior on the effects | estimated from the data (ash) | flat (RUVB), then ash on the posterior |
 | variances | shrunk across genes (vash or limma) | half-``t`` prior, sampled |
 | output | posterior mean, lfsr, s-value | full posterior samples |
 

@@ -22,8 +22,8 @@ Two branches share the model:
 - an **empirical Bayes** branch (`pln_mouthwash`): variational PLN fit, then MOUTHWASH with an ash prior on the
   effects and vash/limma shrinkage of the variances. There is no prior to choose. It reports posterior means, local
   false sign rates and s-values;
-- a **fully Bayesian** branch (`ruvb`): a Gibbs sampler that treats the effects as missing data and propagates the
-  uncertainty of the confounders. It currently works on a Gaussian scale (log-ratios).
+- a **fully Bayesian** branch (`pln_ruvb`): a Gibbs sampler on the latent PLN layer that treats the effects as missing
+  data and propagates the uncertainty of the confounders (`ruvb` does the same on a Gaussian scale).
 
 The package is pure Julia. Comparisons with R packages live in the separate `benchmark/` environment.
 

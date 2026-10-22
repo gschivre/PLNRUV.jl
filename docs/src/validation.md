@@ -71,6 +71,21 @@ Counts simulated from the PLN model: 30 samples, 1 500 genes, 150 controls, two 
   **vash 5.4 %**, at equal RMSE. On variances with a bimodal distribution, the mean squared error of
   ``\log\tilde s_j^2`` is 0.42 raw, 0.27 with limma and 0.24 with vash.
 
-**Remaining miscalibration.** With confounding and low counts, the FDP is still slightly above the nominal level. It
-comes from the estimation of the confounders (the Gaussian pipeline shows the same excess), not from the PLN layer.
-The fully Bayesian branch, which propagates that uncertainty, is the remedy ([§6](bayes.md)).
+**Remaining miscalibration of the empirical Bayes branch.** With confounding and low counts, the FDP is still slightly
+above the nominal level. It comes from the estimation of the confounders (the Gaussian pipeline shows the same
+excess), not from the PLN layer.
+
+## 8.5 The fully Bayesian branch
+
+Same simulation at low depth with confounding, 600 genes, 80 controls, four replicates. `pln_ruvb` runs four chains of
+2 000 sweeps (about 16 s), and its posterior is shrunk by ash ([§6.5](bayes.md)):
+
+| | FDP | RMSE | coverage of 95 % intervals |
+|---|---|---|---|
+| empirical Bayes (`pln_mouthwash`) | 2.6–13.9 % (mean 7.4 %) | 0.33–0.40 | — |
+| fully Bayesian (`pln_ruvb` + ash) | 2.3–4.8 % (mean 3.4 %) | 0.32–0.36 | 93–97 % |
+
+The latent Metropolis–Hastings updates accept 94 % of the proposals. Propagating the uncertainty of the confounders
+brings the FDP to its nominal level, where the empirical Bayes branch exceeded it, at an equal or lower RMSE. On the
+same data, Gaussian RUVB on log-ratios followed by ash reached an FDP of 22 %. The PLN layer is what makes RUVB work
+at low counts.

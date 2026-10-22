@@ -3,7 +3,8 @@
 MOUTHWASH plugs in point estimates of the loadings ``\Gamma`` and of the confounders ``\alpha``. When they are poorly
 estimated (few samples, weak factors, low counts), that uncertainty is lost, and the single inflation factor
 ``\lambda`` can only partly make up for it. The fully Bayesian branch keeps it. It follows RUVB of Gerard & Stephens
-(2021), on a Gaussian scale such as the log-ratios of [`log_ratio`](@ref).
+(2021), on counts through the Poisson-lognormal layer ([`pln_ruvb`](@ref), §6.4), or on a Gaussian scale such as the
+log-ratios of [`log_ratio`](@ref) ([`ruvb`](@ref)).
 
 ## 6.1 The effects as missing data
 
@@ -62,15 +63,35 @@ Chains run in parallel, each with its own random number generator and an overdis
 residual rows plus noise). [`summarize`](@ref) returns the posterior mean, sd, credible interval and lfsr of each
 effect.
 
-## 6.4 Status
+## 6.4 The Poisson-lognormal layer
 
-The Gaussian RUVB is complete and validated ([§8.2](validation.md)). The PLN layer for this branch is the next step:
-the latent ``Z_{ij}`` are added to the Gibbs sampler, updated by an independence Metropolis–Hastings step whose
-proposal is centred at the Lambert W mode of [§5.2](pln.md). The empirical Bayes fit will provide the defaults of the
-hyperparameters and the starting values.
+On counts, the RUVB sampler runs on the latent log abundances ``A_{ij}`` (``y_{ij} \sim \text{Poisson}(e^{o_i +
+A_{ij}})``), which become one more block of the Gibbs sampler. One sweep:
+
+1. the RUVB step of §6.3 on the rotated latent matrix ``Q^\top A`` (its rows of interest and residual rows);
+2. the mean of ``A`` given the RUVB state, in rotated coordinates: ``R_{22}\beta_j + L_{\text{int}}F_{\cdot j}`` for
+   the rows of interest, ``L_{\text{res}}F_{\cdot j}`` for the residual rows, and a draw around the current values for
+   the nuisance rows, whose coefficients have a flat prior. Rotating back with ``Q`` gives ``\mu_{ij}``;
+3. each ``A_{ij}`` from its full conditional
+   ``\pi(a) \propto \exp\{y_{ij}a - e^{o_i + a} - (a - \mu_{ij})^2/(2\sigma_j^2)\}``, by an independence
+   Metropolis–Hastings step. The proposal is Gaussian, centred at the mode of ``\pi`` (the Lambert W solution of
+   [§5.2](pln.md)), with the variance given by the curvature there, inflated by 1.2. Since ``\pi`` is log-concave and
+   close to Gaussian, about 94 % of the proposals are accepted.
+
+The chains start from the variational fit of the empirical Bayes branch (`pln`), and run in parallel.
+
+## 6.5 From the posterior to discoveries
+
+RUVB puts a flat prior on the effects. Its posterior means and credible intervals are those of unshrunk estimates: the
+intervals have the right coverage, but the lfsr of a null gene is not pulled towards 1/2, and averaging it does not
+control the false sign rate. As in Gerard & Stephens (2021), the posterior means and sds are therefore passed to ash
+([§4.1](empirical_bayes.md)). [`summarize`](@ref) returns both: `mean`, `sd`, `lower`, `upper` and `lfsr` from the
+posterior samples, and `ash_mean`, `ash_lfsr` and `ash_svalue` after shrinkage. Use the latter to declare
+discoveries.
 
 ## Functions
 
-- [`ruvb`](@ref): the Gibbs sampler, with the optional offset factor.
+- [`pln_ruvb`](@ref): the Gibbs sampler on counts, through the Poisson-lognormal layer.
+- [`ruvb`](@ref): the Gibbs sampler on a Gaussian scale, with the optional offset factor.
 - [`summarize`](@ref), [`lfsr`](@ref): posterior summaries.
 - [`log_ratio`](@ref): log-ratios to a set of reference genes, as Gaussian input.

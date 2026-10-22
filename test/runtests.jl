@@ -158,4 +158,24 @@ using PLNRUV, Test, Random, Distributions, Statistics
         disc = nc[mw.svalue[nc] .< 0.05]
         @test length(disc) > 50 && mean(β[disc] .== 0) < 0.1
     end
+
+    @testset "PLN-RUVB on low counts" begin
+        rng = Xoshiro(9)
+        n, p, c = 30, 300, 60
+        X = [ones(n) repeat([0.0, 1.0], n ÷ 2)]
+        β = [zeros(c); (rand(rng, p - c) .< 0.3) .* randn(rng, p - c) .* 1.5]
+        σ = sqrt.(rand(rng, Gamma(4, 0.05), p))
+        A = X * [randn(rng, 1, p) .* 1.5; β'] + randn(rng, n, p) .* σ' .+ X[:, 2]
+        o = log(2.0) .+ 0.4 .* randn(rng, n)
+        Y = [rand(rng, Poisson(exp(o[i] + A[i, j]))) for i in 1:n, j in 1:p]
+        out = pln_ruvb(Y, X, 1:c, 1; burnin = 300, nsample = 100, thin = 2, nchain = 2, rng = Xoshiro(10))
+        s = summarize(out.fit)
+        nc = (c + 1):p
+        @test all(0.8 .< out.acceptance .< 1)
+        @test all(isnan, s.mean[1, 1:c])
+        @test mean(s.lower[1, nc] .<= β[nc] .<= s.upper[1, nc]) > 0.85
+        @test cor(s.ash_mean[1, nc], β[nc]) > 0.85
+        disc = nc[s.ash_svalue[1, nc] .< 0.05]
+        @test length(disc) > 30 && mean(β[disc] .== 0) < 0.1
+    end
 end

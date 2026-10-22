@@ -31,6 +31,7 @@ vash
 ## Fully Bayesian branch
 
 ```@docs
+pln_ruvb
 ruvb
 summarize
 lfsr

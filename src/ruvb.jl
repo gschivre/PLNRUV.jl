@@ -146,17 +146,30 @@ local false sign rate of a vector of posterior samples
 lfsr(x::AbstractVector{<:Real}) = min(mean(>=(0), x), mean(<=(0), x))
 
 """
-    summarize(fit::RUVBFit; level = 0.95)
+    summarize(fit::RUVBFit; level = 0.95, shrink = true)
 
 posterior summaries of the coefficients of interest (k₂ x p matrices, NaN for the controls)
+the flat prior of RUVB gives posterior means, sds, credible intervals and lfsr that behave like unshrunk estimates;
+with shrink = true they are also passed to ash, as in Gerard & Stephens: ash_mean, ash_lfsr and ash_svalue
+are the shrunk estimates and the error rates to use for discoveries
 """
-function summarize(fit::RUVBFit; level::Real = 0.95)
+function summarize(fit::RUVBFit; level::Real = 0.95, shrink::Bool = true)
     k₂, p, S, C = size(fit.β)
     draws = reshape(fit.β, k₂, p, S * C)
     α = (1 - level) / 2
     stat(f) = [isnan(draws[i, j, 1]) ? NaN : f(view(draws, i, j, :)) for i in 1:k₂, j in 1:p]
-    return (
+    out = (
         mean = stat(mean), sd = stat(std), lower = stat(x -> quantile(x, α)), upper = stat(x -> quantile(x, 1 - α)),
         lfsr = stat(lfsr),
     )
+    shrink || return out
+    ash_mean, ash_lfsr, ash_svalue = fill(NaN, k₂, p), fill(NaN, k₂, p), fill(NaN, k₂, p)
+    est = setdiff(1:p, fit.controls)
+    for i in 1:k₂
+        a = ash(out.mean[i, est], out.sd[i, est])
+        ash_mean[i, est] .= a.mean
+        ash_lfsr[i, est] .= a.lfsr
+        ash_svalue[i, est] .= a.svalue
+    end
+    return merge(out, (ash_mean = ash_mean, ash_lfsr = ash_lfsr, ash_svalue = ash_svalue))
 end
