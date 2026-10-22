@@ -59,6 +59,17 @@ steps, in the spirit of the early-stopping alternation (ESA) of Owen & Wang (201
 2. with the fit fixed, ``\sigma_j^2`` is the residual sum of squares divided by its ``n - k - q - 1`` degrees of
    freedom.
 
+**Number of factors.** [`choose_q`](@ref) chooses ``q`` by count splitting (Neufeld et al. 2024): every count is
+split by binomial thinning, ``Y^{\text{train}} \sim \text{Binomial}(Y, \varepsilon)``, ``Y^{\text{test}} = Y -
+Y^{\text{train}}``, two Poisson matrices that are independent given the latent values. The PLN model is fitted on
+``Y^{\text{train}}`` for each ``q`` and scored by the predictive log-likelihood of ``Y^{\text{test}}``, where each
+count is ``\text{Poisson}(e^{o_i + Z_{ij}})`` with a fresh ``Z_{ij} \sim \mathcal N(\mu_{ij}, \sigma_j^2)``
+(Gauss–Hermite quadrature). The two parts share the latent overdispersion, so a low-rank mean that has learned it is
+still partly rewarded; scoring the mean ``\mu`` rather than the per-cell latent values limits this optimism. On
+PLN simulations with two factors it recovers ``q = 2``. On thinned GTEx muscle it keeps adding factors up to the
+largest ``q`` tried (5–6 of 6), consistent with the residual structure left by ``q = 2``, although with 20 samples
+more factors make the error rates worse ([§8](validation.md)).
+
 ## 3.3 Identifying the confounders
 
 The confounded estimates follow a regression with unknown coefficients ``\alpha`` and known regressors

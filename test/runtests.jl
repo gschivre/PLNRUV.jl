@@ -126,6 +126,16 @@ using PLNRUV, Aqua, Test, Random, Distributions, Statistics
         va = vash(s2, d)
         @test sum(va.π) ≈ 1
         @test err(va.s2) < err(squeeze_var(s2, d).s2) < err(s2)
+        #trend: variances decreasing with a covariate (mean–dispersion trend), an exchangeable prior biases both ends
+        x = 10 .* rand(rng, p)
+        σ2 = exp.(-0.5 .* x .+ 0.3 .* randn(rng, p))
+        s2 = σ2 .* rand(rng, Chisq(d), p) ./ d
+        tr = PLNRUV.shrink_variances(s2, d, :vash; covariate = x)
+        ex = PLNRUV.shrink_variances(s2, d, :vash)
+        @test err(tr.s2) < err(ex.s2)
+        low = x .< 2 #high-variance end: the exchangeable prior pulls them down, the trend does not
+        @test median(ex.s2[low] ./ σ2[low]) < median(tr.s2[low] ./ σ2[low])
+        @test PLNRUV.shrink_variances(s2, d, :none; covariate = x).s2 == s2
     end
 
     @testset "MOUTHWASH with confounders and a compositional shift" begin
@@ -146,6 +156,44 @@ using PLNRUV, Aqua, Test, Random, Distributions, Statistics
             @test length(disc) > 50 && mean(β[disc] .== 0) < 0.1
         end
         @test all(iszero, mouthwash(Y, X, 2; controls = 1:c).mean[1:c])
+    end
+
+    @testset "MOUTHWASH: additive variance inflation and mixture of t noise" begin
+        @test PLNRUV.inflated_df(10.0, 2.0) == 28.0 #4 + (10 - 4) × 2²
+        @test PLNRUV.inflated_df(10.0, 0.8) == 10.0 && PLNRUV.inflated_df(Inf, 2.0) == Inf
+        #estimates with t(ν) noise of scale v (from the variance estimate) plus normal noise (λ - 1) v it does not see
+        p, c, ν, λ = 4_000, 300, 10.0, 2.0
+        function addsim(seed, df)
+            rng = Xoshiro(seed)
+            v = rand(rng, Gamma(4, 0.05), p)
+            β = [zeros(c); (rand(rng, p - c) .< 0.3) .* randn(rng, p - c)]
+            r = β .+ sqrt.(v) .* (rand(rng, TDist(ν), p) .+ sqrt(λ - 1) .* randn(rng, p))
+            Γ = 0.1 .* randn(rng, 1, p) #a confounder with no effect (α = 0)
+            fit = PLNRUV.mouthwash_fit(r, sqrt.(v), Γ, 1:c; df = df)
+            nc = (c + 1):p
+            disc = nc[PLNRUV.cumulative_rate(fit.lfsr[nc]) .< 0.05]
+            wrong = (β[disc] .== 0) .| (sign.(β[disc]) .!= sign.(fit.mean[disc]))
+            return (λ = fit.λ, ndisc = length(disc), fdp = isempty(disc) ? 0.0 : mean(wrong), v = v)
+        end
+        add = [addsim(s, ν) for s in 1:4]
+        nor = [addsim(s, Inf) for s in 1:4]
+        @test all(1.6 < a.λ < 2.4 for a in add)
+        @test all(a.ndisc > 80 for a in add)
+        @test mean(a.fdp for a in add) < min(0.08, mean(a.fdp for a in nor)) #the normal likelihood misses the t tails
+        v = add[1].v
+        #a one-component mixture is the single t
+        N1 = PLNRUV.NoiseModel(v, ν)
+        Nm = PLNRUV.NoiseModel([0.5 0.5] .* ones(p), [v v], fill(ν, p, 2))
+        @test PLNRUV.lognoise(N1, 1, 0.3, 0.1, 1.5) ≈ PLNRUV.lognoise(Nm, 1, 0.3, 0.1, 1.5)
+        #vash posterior mixture: weights sum to one and a mixture likelihood runs through MOUTHWASH
+        rng = Xoshiro(9)
+        s2 = v .* rand(rng, Chisq(8), p) ./ 8
+        va = vash(s2, 8)
+        @test all(sum(va.mix.w; dims = 2) .≈ 1) && size(va.mix.w) == size(va.mix.s2) == size(va.mix.df)
+        r = sqrt.(v) .* randn(rng, p)
+        Γ = 0.1 .* randn(rng, 1, p)
+        fm = PLNRUV.mouthwash_fit(r, sqrt.(va.s2), Γ, 1:c; noise = PLNRUV.NoiseModel(va.mix.w, va.mix.s2, va.mix.df))
+        @test isfinite(fm.loglik) && 0.5 < fm.λ < 4
     end
 
     @testset "PLN variational E-step" begin
@@ -177,6 +225,20 @@ using PLNRUV, Aqua, Test, Random, Distributions, Statistics
         @test cor(mw.mean[nc], β[nc]) > 0.85
         disc = nc[mw.svalue[nc] .< 0.05]
         @test length(disc) > 50 && mean(β[disc] .== 0) < 0.1
+    end
+
+    @testset "number of factors by count splitting" begin
+        x, w = PLNRUV.gausshermite(10)
+        @test sum(w) ≈ sqrt(π) && sum(w .* x .^ 2) ≈ sqrt(π) / 2 #∫ exp(-x²), ∫ x² exp(-x²)
+        rng = Xoshiro(10)
+        n, p = 20, 400
+        X = [ones(n) repeat([0.0, 1.0], n ÷ 2)]
+        W = randn(rng, n, 2)
+        W .-= X * (X \ W)
+        A = X * [randn(rng, 1, p) .+ 3; zeros(1, p)] + W * (0.5 .* randn(rng, 2, p)) + 0.3 .* randn(rng, n, p)
+        Y = [rand(rng, Poisson(exp(A[i, j]))) for i in 1:n, j in 1:p]
+        c = choose_q(Y, X; qs = 0:4, nsplit = 1, rng = rng)
+        @test c.q == 2 && c.qs == 0:4
     end
 
     @testset "PLN-RUVB on low counts" begin

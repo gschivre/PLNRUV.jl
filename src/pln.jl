@@ -36,7 +36,7 @@ function pln_elbo(Y, o, M, S2, μ, σ2)
 end
 
 #M-step: fitted means μ = X B + W Γ (W orthogonal to X) and the residual variances σ²
-function pln_mstep(M, S2, QR, k, q, nfix, σ2, shrink_var)
+function pln_mstep(M, S2, QR, k, q, nfix, σ2, shrink_var, var_trend)
     n, p = size(M)
     Mrot = QR.Q' * M
     Mres = Mrot[(k + 1):n, :]
@@ -50,11 +50,12 @@ function pln_mstep(M, S2, QR, k, q, nfix, σ2, shrink_var)
     fitted = [Mrot[1:k, :]; l0 .+ Lres * Γ]
     μ = QR.Q * fitted
     #residual variances with n - k - q - nfix degrees of freedom, shrunk across genes
+    #(around their trend in the mean latent log-abundance with var_trend = true)
     d = n - k - q - nfix
     σ2 = max.(vec(sum(abs2, M - μ; dims = 1) + sum(S2; dims = 1)) ./ d, 1.0e-8)
-    shrunk = shrink_variances(σ2, d, shrink_var)
+    shrunk = shrink_variances(σ2, d, shrink_var; covariate = var_trend ? vec(mean(μ; dims = 1)) : nothing)
     B = UpperTriangular(QR.R) \ Mrot[1:k, :]
-    return μ, shrunk.s2, B, nfix > 0 ? [ones(1, p); Γ] : Γ, shrunk.df
+    return μ, shrunk.s2, B, nfix > 0 ? [ones(1, p); Γ] : Γ, shrunk.df, shrunk.mix
 end
 
 struct PLNFit
@@ -66,20 +67,23 @@ struct PLNFit
     σ2::Vector{Float64} #lognormal overdispersion of each gene
     offsets::Vector{Float64}
     df::Vector{Float64} #degrees of freedom of the overdispersions after shrinkage
+    σ2mix::NamedTuple #posterior mixture of each overdispersion (weights w, squared scales s2, df; genes x components)
     elbo::Float64
     iterations::Int
 end
 
 """
-    pln(Y, X, q; offsets = log library sizes, offset_factor = true, maxiter = 500, tol = 1e-7, shrink_var = :vash)
+    pln(Y, X, q; offsets = log library sizes, offset_factor = true, maxiter = 500, tol = 1e-7, shrink_var = :vash, var_trend = false)
 
 fit the PLN model to counts Y (samples x genes) with design X and q latent factors
 offsets default to the log library sizes
+with var_trend = true the overdispersions are shrunk around their trend in the mean log-abundance (the mean–dispersion
+trend of RNA-seq, as in limma-trend) instead of toward a common scale
 """
 function pln(
         Y::AbstractMatrix{<:Integer}, X::AbstractMatrix{<:Real}, q::Integer;
         offsets::AbstractVector{<:Real} = vec(log.(sum(Y; dims = 2))), offset_factor::Bool = true,
-        maxiter::Integer = 500, tol::Real = 1.0e-7, shrink_var::Symbol = :vash
+        maxiter::Integer = 500, tol::Real = 1.0e-7, shrink_var::Symbol = :vash, var_trend::Bool = false
     )
     n, p = size(Y)
     k = size(X, 2)
@@ -91,7 +95,7 @@ function pln(
     M = log.(Y .+ 0.5) .- o
     S2 = 1 ./ (Y .+ 1.0)
     σ2 = vec(var(M; dims = 1))
-    μ, σ2, B, Γ, df = pln_mstep(M, S2, QR, k, q, nfix, σ2, shrink_var)
+    μ, σ2, B, Γ, df, σ2mix = pln_mstep(M, S2, QR, k, q, nfix, σ2, shrink_var, var_trend)
     elbo = -Inf
     iter = 0
     for outer in 1:maxiter
@@ -101,13 +105,13 @@ function pln(
                 M[i, j], S2[i, j] = estep_cell(Y[i, j], o[i], μ[i, j], σ2[j], M[i, j], S2[i, j])
             end
         end
-        μ, σ2, B, Γ, df = pln_mstep(M, S2, QR, k, q, nfix, σ2, shrink_var)
+        μ, σ2, B, Γ, df, σ2mix = pln_mstep(M, S2, QR, k, q, nfix, σ2, shrink_var, var_trend)
         elbonew = pln_elbo(Y, o, M, S2, μ, σ2)
         converged = abs(elbonew - elbo) < tol * abs(elbonew)
         elbo = elbonew
         converged && break
     end
-    return PLNFit(M, S2, μ, B, Γ, σ2, o, df, elbo, iter)
+    return PLNFit(M, S2, μ, B, Γ, σ2, o, df, σ2mix, elbo, iter)
 end
 
 """
@@ -132,9 +136,13 @@ function pln_mouthwash(
     β̃ = vec(qint' * fit.M) ./ R22
     λcount = exp.(fit.offsets .+ fit.μ .+ fit.σ2' ./ 2)
     s = sqrt.(vec(sum(qint .^ 2 .* (fit.σ2' .+ 1 ./ λcount); dims = 1))) ./ abs(R22)
+    #per variance component m of the overdispersion: Σᵢ qᵢ² (σ̃²ⱼₘ + 1 / λᵢⱼ) / R₂₂² (Σᵢ qᵢ² = 1)
+    poisson = vec(sum(qint .^ 2 ./ λcount; dims = 1))
+    mixv = (fit.σ2mix.s2 .+ poisson) ./ R22^2
+    noise = noise_model(likelihood, s .^ 2, fit.df, fit.σ2mix.w, mixv, fit.σ2mix.df)
     mw = mouthwash_fit(
         β̃, s, fit.Γ, collect(controls); nullweight = nullweight, estimate_λ = estimate_λ,
-        alpha_uncertainty = alpha_uncertainty, df = likelihood === :t ? fit.df : Inf
+        alpha_uncertainty = alpha_uncertainty, noise = noise
     )
     return (
         pln = fit,

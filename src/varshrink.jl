@@ -42,6 +42,8 @@ vash of Lu M. & Stephens M., Bioinformatics (2016): https://doi.org/10.1093/bioi
 prior on the variances: mixture of inverse gammas σ²ⱼ ~ Σₖ πₖ InvGamma(aₖ, aₖ c) with a common scale c
 and a grid of shapes aₖ (limma is the one-component case), so that s²ⱼ / c ~ Σₖ πₖ F(d, 2aₖ)
 π by mix-SQP (as in ash), c by golden-section search; return the posterior 1 / E[1 / σ²ⱼ]
+and the posterior mixture over the shapes with nonzero weight (mix: weights w, squared scales s2 and degrees of
+freedom df, genes x components), from which the exact likelihood of a moderated estimate is a mixture of t
 """
 function vash(s2::AbstractVector{<:Real}, d::Real; shapes = 2.0 .^ (-2:0.5:12))
     p = length(s2)
@@ -95,19 +97,53 @@ function vash(s2::AbstractVector{<:Real}, d::Real; shapes = 2.0 .^ (-2:0.5:12))
     #posterior of the precisions: Σₖ wⱼₖ Gamma(aₖ + d / 2, rate aₖ c + d s²ⱼ / 2)
     post = zeros(p)
     df = zeros(p) #effective degrees of freedom: the predictive is a mixture of t with 2aₖ + d degrees of freedom
+    active = findall(>(1.0e-8), π)
+    mix = (w = zeros(p, length(active)), s2 = zeros(p, length(active)), df = zeros(p, length(active)))
     for j in 1:p
         w = view(Lik, j, :) .* π
         w ./= sum(w)
         post[j] = 1 / sum(w[k] * (shapes[k] + d / 2) / (shapes[k] * c + d * s2[j] / 2) for k in 1:K)
         df[j] = sum(w[k] * (2 * shapes[k] + d) for k in 1:K)
+        for (l, k) in enumerate(active)
+            mix.w[j, l] = w[k]
+            mix.s2[j, l] = (shapes[k] * c + d * s2[j] / 2) / (shapes[k] + d / 2)
+            mix.df[j, l] = 2 * shapes[k] + d
+        end
+        mix.w[j, :] ./= sum(view(mix.w, j, :))
     end
-    return (s2 = post, π = π, c = c, shapes = collect(shapes), df = df)
+    return (s2 = post, π = π, c = c, shapes = collect(shapes), df = df, mix = mix)
 end
 
-#dispatch on the shrinkage method (:vash, :limma or :none): the shrunk variances and their degrees of freedom
-function shrink_variances(s2::AbstractVector{<:Real}, d::Real, method::Symbol)
-    method === :none && return (s2 = collect(float.(s2)), df = fill(float(d), length(s2)))
-    method === :limma && return squeeze_var(s2, d)[(:s2, :df)]
-    method === :vash && return vash(s2, d)[(:s2, :df)]
+"""
+    variance_trend(s2, x)
+
+trend of the variances in a covariate x (e.g. the mean log-abundance of each gene, as in limma-trend):
+a cubic polynomial fitted to log s² by least squares, evaluated at x clamped to its 1% and 99% quantiles
+(no extrapolation of the cubic in the tails); return the trend on the variance scale
+the constant bias of E[log s²] is not removed, it is absorbed by the scale of the prior (s₀² or c)
+"""
+function variance_trend(s2::AbstractVector{<:Real}, x::AbstractVector{<:Real})
+    lo, hi = quantile(x, [0.01, 0.99])
+    xc = clamp.(x, lo, hi)
+    z = (xc .- mean(xc)) ./ max(std(xc), eps()) #standardised for a well-conditioned design
+    A = [ones(length(z)) z z .^ 2 z .^ 3]
+    return exp.(A * (A \ log.(s2)))
+end
+
+#dispatch on the shrinkage method (:vash, :limma or :none): the shrunk variances, their degrees of freedom and the
+#posterior mixture (one component for limma and none, the active shapes for vash)
+#with a covariate the variances are shrunk around their trend in it: method applied to s² / trend, then rescaled
+#(an exchangeable prior pulls the overdispersions of low-count genes down and those of high-count genes up)
+function shrink_variances(s2::AbstractVector{<:Real}, d::Real, method::Symbol; covariate = nothing)
+    single(s2, df) = (s2 = s2, df = df, mix = (w = ones(length(s2), 1), s2 = reshape(s2, :, 1), df = reshape(df, :, 1)))
+    method === :none && return single(collect(float.(s2)), fill(float(d), length(s2)))
+    t = covariate === nothing ? ones(length(s2)) : variance_trend(s2, covariate)
+    if method === :limma
+        lim = squeeze_var(s2 ./ t, d)
+        return single(lim.s2 .* t, lim.df)
+    elseif method === :vash
+        va = vash(s2 ./ t, d)
+        return (s2 = va.s2 .* t, df = va.df, mix = (w = va.mix.w, s2 = va.mix.s2 .* t, df = va.mix.df))
+    end
     throw(ArgumentError("unknown variance shrinkage method $method (use :vash, :limma or :none)"))
 end

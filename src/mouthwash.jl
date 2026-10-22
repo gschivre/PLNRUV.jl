@@ -30,12 +30,11 @@ function factor_analysis(Y::AbstractMatrix{<:Real}, q::Integer; offset_factor::B
     return (F = F, σ2 = σ2)
 end
 
-#maximise Q(λ) = Σⱼₖ wⱼₖ log N(rⱼ; 0, λ sⱼ² + σₖ²) (or the t density with νⱼ degrees of freedom) over
+#maximise Q(λ) = Σⱼₖ wⱼₖ log N(rⱼ; 0, λ sⱼ² + σₖ²) (or the t / mixture of t densities of the noise model N) over
 #log λ ∈ [-5, 5] by golden-section search
-function update_λ(r, s2, σ2, W; ν = fill(Inf, length(r)), lo = -5.0, hi = 5.0, tol = 1.0e-6)
-    cν = tconst.(ν)
+function update_λ(r, N::NoiseModel, σ2, W; lo = -5.0, hi = 5.0, tol = 1.0e-6)
     Q(logλ) = sum(
-        W[j, k] == 0 ? 0.0 : W[j, k] * logtpdf(r[j], exp(logλ) * s2[j] + σ2[k], ν[j], cν[j])
+        W[j, k] == 0 ? 0.0 : W[j, k] * lognoise(N, j, r[j], σ2[k], exp(logλ))
             for j in eachindex(r), k in eachindex(σ2)
     )
     g = (sqrt(5) - 1) / 2
@@ -62,12 +61,14 @@ end
 #with alpha_uncertainty = true the variance of each corrected estimate rⱼ = β̃ⱼ - Γⱼ'α̂ includes the uncertainty of α̂
 #(as in the CATE variance of Wang et al.): λ (sⱼ² + Γⱼ' V Γⱼ), V = (Γ_C diag(1 / s_C²) Γ_C')⁻¹ with controls; without
 #controls, V is the inverse weighted Gram matrix of the α step at convergence, and the prior is refitted
+#the noise model of β̃ (default: a t with df degrees of freedom and squared scale sⱼ²) can be a mixture of t
+#(vash); s is then the effective standard error used for the α weights and the grid
 function mouthwash_fit(
-        β̃, s, Γ, controls; nullweight = 10, estimate_λ = true, alpha_uncertainty = true, df = Inf, tol = 1.0e-7,
-        maxiter = 500
+        β̃, s, Γ, controls; nullweight = 10, estimate_λ = true, alpha_uncertainty = true, df = Inf,
+        noise::NoiseModel = NoiseModel(s .^ 2, df), tol = 1.0e-7, maxiter = 500
     )
     p = length(β̃)
-    ν = gene_df(df, p) #degrees of freedom of each sⱼ (Inf: normal likelihood)
+    N = noise
     s2 = s .^ 2
     free = setdiff(1:p, controls)
     #α from the controls only (weights 1 / sⱼ², λ cancels), or a starting value from all genes without controls
@@ -78,8 +79,10 @@ function mouthwash_fit(
         G = Symmetric(ΓC * (ΓC' ./ s2[controls]))
         α = G \ (ΓC * (β̃[controls] ./ s2[controls]))
         if alpha_uncertainty #Var(rⱼ) = λ (sⱼ² + Γⱼ' G⁻¹ Γⱼ) for the non-control genes
-            s2 = copy(s2)
-            s2[free] .+= vec(sum(Γ[:, free] .* (G \ Γ[:, free]); dims = 1))
+            a = zeros(p)
+            a[free] .= vec(sum(Γ[:, free] .* (G \ Γ[:, free]); dims = 1))
+            s2 = s2 .+ a
+            N = add_noise(N, a)
         end
     end
     λ = 1.0
@@ -94,7 +97,7 @@ function mouthwash_fit(
     π = fill(1 / K, K)
     obj = -Inf
     for _ in 1:maxiter
-        mixture_lik!(Lik, logscale, r, s2, σ2, λ; ν = ν)
+        mixture_lik!(Lik, logscale, r, N, σ2, λ)
         π, _ = mixture_weights(Lik, logscale, free, prior; π0 = π)
         #observed penalised log-likelihood (controls only use the point mass)
         objnew = mixture_objective(π, Lik, logscale, free, prior) + sum(j -> log(Lik[j, 1]) + logscale[j], controls; init = 0.0)
@@ -116,23 +119,23 @@ function mouthwash_fit(
             α = Symmetric(Γ * (c .* Γ')) \ (Γ * (c .* β̃))
             r = β̃ - Γ' * α
         end
-        estimate_λ && (λ = update_λ(r, s2, σ2, W; ν = ν))
+        estimate_λ && (λ = update_λ(r, N, σ2, W))
     end
-    v = λ .* s2
+    Nv = scale_noise(N, λ)
     if alpha_uncertainty && isempty(controls)
         #Var(α̂) from the weighted least squares of the last α step, then refit the prior with the corrected variances
         c = [sum(W[j, k] / (λ * s2[j] + σ2[k]) for k in 1:K) for j in 1:p]
         Vα = inv(Symmetric(Γ * (c .* Γ')))
-        v .+= vec(sum(Γ .* (Vα * Γ); dims = 1))
-        mixture_lik!(Lik, logscale, r, v, σ2, 1.0; ν = ν)
+        Nv = add_noise(Nv, vec(sum(Γ .* (Vα * Γ); dims = 1)))
+        mixture_lik!(Lik, logscale, r, Nv, σ2, 1.0)
         π, obj = mixture_weights(Lik, logscale, free, prior; π0 = π)
     end
-    post = ash_posterior(r, v, σ2, π; ν = ν)
+    post = ash_posterior(r, Nv, σ2, π)
     for j in controls #controls are fixed to zero
         post.mean[j] = post.sd[j] = 0.0
         post.lfsr[j] = post.lfdr[j] = 1.0
     end
-    e = evalues(r, v, grid, π; ν = ν)
+    e = evalues(r, Nv, grid, π)
     e[controls] .= 0.0
     return merge((α = α, λ = λ, g = (σ = grid, π = π), loglik = obj, evalue = e), post)
 end
@@ -154,29 +157,39 @@ struct MouthwashFit
     controls::Vector{Int}
 end
 
+#noise model of the estimates for a likelihood option: :tmix the mixture of t of the vash posterior (exact for the
+#moderated estimates), :t a single t with the averaged degrees of freedom, :normal the normal
+function noise_model(likelihood::Symbol, s2, df, mixw, mixv, mixdf)
+    likelihood === :tmix && return NoiseModel(mixw, mixv, mixdf)
+    likelihood === :t && return NoiseModel(s2, df)
+    likelihood === :normal && return NoiseModel(s2, Inf)
+    throw(ArgumentError("unknown likelihood $likelihood (use :tmix, :t or :normal)"))
+end
+
 """
-    mouthwash(Y, X, q; controls = Int[], cov_of_interest = size(X, 2), offset_factor = true, nullweight = 10, estimate_λ = true, shrink_var = :vash)
+    mouthwash(Y, X, q; controls = Int[], cov_of_interest = size(X, 2), offset_factor = true, nullweight = 10, estimate_λ = true, shrink_var = :vash, var_trend = false)
 
 MOUTHWASH on Gaussian data Y (samples x genes) with design X and q latent factors
 controls are optional negative controls; one covariate of interest (default the last column of X)
+with var_trend = true the variances are shrunk around their trend in the mean of each column of Y
 """
 function mouthwash(
         Y::AbstractMatrix{<:Real}, X::AbstractMatrix{<:Real}, q::Integer;
         controls::AbstractVector{<:Integer} = Int[], cov_of_interest::Integer = size(X, 2),
         offset_factor::Bool = true, nullweight::Real = 10, estimate_λ::Bool = true, shrink_var::Symbol = :vash,
-        alpha_uncertainty::Bool = true, likelihood::Symbol = :t
+        alpha_uncertainty::Bool = true, likelihood::Symbol = :t, var_trend::Bool = false
     )
     rot = rotate(Y, X, [cov_of_interest])
     fa = factor_analysis(rot.Yres, q; offset_factor = offset_factor)
     R22 = rot.R22[1, 1]
     β̃ = vec(rot.Yint) ./ R22
     d = size(rot.Yres, 1) - q - Int(offset_factor) #residual degrees of freedom of the variances
-    shrunk = shrink_variances(fa.σ2, d, shrink_var)
+    shrunk = shrink_variances(fa.σ2, d, shrink_var; covariate = var_trend ? vec(mean(Y; dims = 1)) : nothing)
     s = sqrt.(shrunk.s2) ./ abs(R22)
-    df = likelihood === :t ? shrunk.df : Inf #t likelihood with the degrees of freedom of the (shrunk) variances
+    noise = noise_model(likelihood, s .^ 2, shrunk.df, shrunk.mix.w, shrunk.mix.s2 ./ R22^2, shrunk.mix.df)
     fit = mouthwash_fit(
         β̃, s, fa.F, collect(controls); nullweight = nullweight, estimate_λ = estimate_λ,
-        alpha_uncertainty = alpha_uncertainty, df = df
+        alpha_uncertainty = alpha_uncertainty, noise = noise
     )
     return MouthwashFit(
         β̃, s, fit.α, fit.λ, fit.g, fit.loglik, fit.mean, fit.sd, fit.lfsr, fit.lfdr,

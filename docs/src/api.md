@@ -23,6 +23,7 @@ pln_mouthwash
 pln
 mouthwash
 factor_analysis
+choose_q
 ash
 squeeze_var
 vash

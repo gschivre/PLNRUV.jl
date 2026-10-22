@@ -14,7 +14,7 @@ export surrogate_factors, assign_groups, thin_counts, thin_2group
 export log_ratio
 export ruvb, summarize, lfsr, rhat, ess
 export ash, mouthwash, factor_analysis, evalues, ebh
-export pln, pln_mouthwash, pln_ruvb
+export pln, pln_mouthwash, pln_ruvb, choose_q
 export squeeze_var, vash
 
 include("io.jl")
@@ -28,6 +28,7 @@ include("varshrink.jl")
 include("mouthwash.jl")
 include("pln.jl")
 include("plnruvb.jl")
+include("countsplit.jl")
 include("show.jl")
 
 end

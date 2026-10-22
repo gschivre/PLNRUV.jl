@@ -84,6 +84,27 @@ The maximisation is a block coordinate ascent; each block increases the objectiv
 The effects are then shrunk by ash on the corrected estimates ``\hat{\tilde\beta}_j - \Gamma_j^\top\hat\alpha``, with
 standard errors ``\sqrt{\hat\lambda}\, s_j``.
 
+**Inflation and the ``t`` likelihood.** With `likelihood = :t` (the default) the noise of each estimate is a ``t``
+whose degrees of freedom are those of the shrunk variance: given the prior of the variances, the moderated estimate
+follows exactly a ``t_{d_0 + d}`` (Lemma 1 of Lu & Stephens 2019). The inflation ``\lambda`` is a different source of
+noise: the variance estimate does not see it (loadings, sample-specific variances, …), and on GTEx its residuals have
+no excess kurtosis. Multiplying the ``t`` by ``\lambda`` would stretch the ``t`` tails over it. It is added instead,
+``t_\nu(0, v) * \mathcal N(0, (\lambda - 1) v)``, approximated by a ``t`` of squared scale ``\lambda v`` whose excess
+kurtosis matches: the ``t`` share ``1/\lambda`` of the variance scales ``6 / (\nu - 4)`` by ``1/\lambda^2``, so
+
+```math
+\nu_\lambda = 4 + (\nu - 4)\,\lambda^2 \qquad (\lambda > 1;\ \nu_\lambda = \nu \text{ otherwise}).
+```
+
+On thinned GTEx (10 replicates) this brings the confounded scenario from 2.2 % to 5.0 % FDP at ``s < 0.05`` with
+15 % more power, and leaves the balanced one at 4.5 %.
+
+With vash the predictive is a mixture of ``t``: given the shape ``a_m`` the estimate follows a ``t_{2a_m + d}`` with
+the posterior scale of that component. `likelihood = :tmix` uses this mixture,
+``\sum_m w_{jm}\, t_{2a_m + d}(\beta_j, \tilde s_{jm})``, instead of a single ``t`` with the averaged degrees of freedom
+(`:t`). The two differ when vash keeps a component of nearly fixed variance (``a_m`` large) next to a heavy-tailed
+one: averaging the degrees of freedom then gives an almost normal likelihood.
+
 ## 4.3 Variance shrinkage
 
 Each ``s_j`` rests on a variance estimated from few degrees of freedom: ``d = n - k - q - 1`` residual rows, about
@@ -117,6 +138,16 @@ Both are available everywhere a variance is estimated (`shrink_var = :vash`, `:l
 MOUTHWASH, and inside each M-step of the PLN fit, where the shrunk overdispersions also stabilise the E-step of
 low-count genes. vash is the default. On bimodal variances it beats limma, and on the low-count PLN simulations of
 [§8.4](validation.md) it gives the best-calibrated false sign rate.
+
+Both priors are exchangeable: every variance is pulled toward the same scale. RNA-seq overdispersions are not
+exchangeable, they decrease with expression (the mean–dispersion trend that DESeq2 and edgeR fit). On thinned GTEx
+muscle the PLN overdispersion falls from about 0.45 for genes below 40 reads to about 0.06 above 2500, a slope of about
+``-0.5`` on the log scale, so it is not extra Poisson noise (which would give ``-1``). A common scale then shrinks the
+overdispersions of low-count genes down and those of high-count genes up, and the standard errors are too small at low
+counts and too large at high counts, a bias that the single inflation ``\lambda`` of MOUTHWASH cannot remove. With
+`var_trend = true` the variances are shrunk around a cubic trend of ``\log s_j^2`` in the mean log-abundance of each
+gene (limma-trend, Law et al. 2014): vash or limma is applied to ``s_j^2 / t_j`` and the result is multiplied by
+``t_j``.
 
 ## Functions
 

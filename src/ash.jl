@@ -15,6 +15,51 @@ logtpdf(x::Real, v::Real, ν::Real, c::Real) = isinf(ν) ? lognormpdf(x, v) : c 
 gene_df(ν::Real, p) = fill(float(ν), p)
 gene_df(ν::AbstractVector, p) = collect(float.(ν))
 
+#noise model of the estimates: rⱼ - βⱼ ~ Σₘ wⱼₘ t(νⱼₘ) with squared scale vⱼₘ (normal when νⱼₘ = Inf)
+#one column is a single t or normal; several columns are the exact likelihood when the variances were shrunk by a
+#mixture prior (vash): given the variance component m, the moderated estimate follows a t with 2aₘ + d degrees of
+#freedom (Lemma 1 of Lu M. & Stephens M., arXiv:1901.10679 (2019)), and wⱼₘ is the posterior weight of m
+struct NoiseModel
+    w::Matrix{Float64}
+    v::Matrix{Float64}
+    ν::Matrix{Float64}
+    c::Matrix{Float64} #normalising constants tconst(ν)
+    function NoiseModel(w::AbstractMatrix, v::AbstractMatrix, ν::AbstractMatrix)
+        @assert size(w) == size(v) == size(ν)
+        return new(float.(w), float.(v), float.(ν), tconst.(ν))
+    end
+end
+NoiseModel(v::AbstractVector, ν = Inf) =
+    NoiseModel(ones(length(v), 1), reshape(collect(float.(v)), :, 1), reshape(gene_df(ν, length(v)), :, 1))
+Base.length(N::NoiseModel) = size(N.v, 1)
+
+#degrees of freedom of a t(ν) with squared scale v convolved with an independent N(0, (λ - 1) v), λ > 1:
+#the variance inflation of MOUTHWASH is additive noise that the variance estimate does not see (loadings,
+#sample-specific variances, ...), not a stretch of the t; matching the excess kurtosis, 6 / (ν - 4) scaled by the
+#squared share 1 / λ² of the t part, gives a t with 4 + (ν - 4) λ² degrees of freedom and squared scale λ v
+#(λ ≤ 1 deflates the estimated variances, the degrees of freedom are kept)
+inflated_df(ν::Real, λ::Real) = λ > 1 && isfinite(ν) && ν > 4 ? 4 + (ν - 4) * λ^2 : float(ν)
+
+#the noise model with every squared scale inflated by λ (with the degrees of freedom of the additive inflation),
+#or increased by a vector a of normal variances (degrees of freedom kept: a is small next to the scales)
+scale_noise(N::NoiseModel, λ::Real) = NoiseModel(N.w, λ .* N.v, inflated_df.(N.ν, λ))
+add_noise(N::NoiseModel, a::AbstractVector) = NoiseModel(N.w, N.v .+ a, N.ν)
+
+#log density of gene j at x when the prior component of variance σ2 is convolved with the noise (the t
+#approximation of the convolution), with the noise inflated by λ (see inflated_df)
+function lognoise(N::NoiseModel, j::Integer, x::Real, σ2::Real, λ::Real = 1.0)
+    function term(k)
+        N.w[j, k] == 0 && return -Inf
+        ν = inflated_df(N.ν[j, k], λ)
+        c = ν == N.ν[j, k] ? N.c[j, k] : tconst(ν)
+        return log(N.w[j, k]) + logtpdf(x, λ * N.v[j, k] + σ2, ν, c)
+    end
+    M = size(N.w, 2)
+    M == 1 && return term(1) - log(N.w[j, 1])
+    m = maximum(term, 1:M)
+    return m + log(sum(k -> exp(term(k) - m), 1:M))
+end
+
 #grid of prior standard deviations: from min(s) / 10 to 2 * sqrt(max(r² - s²)), multiplicative step mult
 function ash_grid(r::AbstractVector{<:Real}, s::AbstractVector{<:Real}; mult::Real = sqrt(2))
     σmin = minimum(s) / 10
@@ -26,14 +71,14 @@ end
 
 #component likelihoods Lⱼₖ = N(rⱼ; 0, λ sⱼ² + σₖ²) scaled by their row maximum (returned in logscale)
 #with ν (degrees of freedom of each sⱼ) the normal is replaced by a t with scale √(λ sⱼ² + σₖ²), the usual
-#approximation of the convolution of a t likelihood with a normal mixture (exact for the point mass)
-function mixture_lik!(Lik, logscale, r, s2, σ2, λ; ν = Inf)
-    νj = gene_df(ν, length(r))
+#approximation of the convolution of a t likelihood with a normal mixture (exact for the point mass);
+#with a NoiseModel N, Lⱼₖ = Σₘ wⱼₘ t(rⱼ; νⱼₘ, λ vⱼₘ + σₖ²)
+mixture_lik!(Lik, logscale, r, s2, σ2, λ; ν = Inf) = mixture_lik!(Lik, logscale, r, NoiseModel(s2, ν), σ2, λ)
+function mixture_lik!(Lik, logscale, r, N::NoiseModel, σ2, λ)
     for j in eachindex(r)
         m = -Inf
-        c = tconst(νj[j])
         for k in eachindex(σ2)
-            Lik[j, k] = logtpdf(r[j], λ * s2[j] + σ2[k], νj[j], c)
+            Lik[j, k] = lognoise(N, j, r[j], σ2[k], λ)
             m = max(m, Lik[j, k])
         end
         logscale[j] = m
@@ -135,29 +180,35 @@ function mixture_weights(Lik, logscale, free, prior; π0 = fill(1 / size(Lik, 2)
 end
 
 #posterior summaries of βⱼ given rⱼ ~ N(βⱼ, vⱼ) and the prior Σₖ πₖ N(0, σₖ²)
-function ash_posterior(r, v, σ2, π; ν = Inf)
-    νj = gene_df(ν, length(r))
+#(with a t likelihood the component weights use the t density and the conditional posteriors the normal ones;
+#with a NoiseModel the weights run over the pairs of prior and noise components)
+ash_posterior(r, v, σ2, π; ν = Inf) = ash_posterior(r, NoiseModel(v, ν), σ2, π)
+function ash_posterior(r, N::NoiseModel, σ2, π)
     p = length(r)
+    K, M = length(π), size(N.w, 2)
     out = (mean = zeros(p), sd = zeros(p), lfsr = zeros(p), lfdr = zeros(p))
-    w = similar(π)
+    w = zeros(K, M)
     for j in 1:p
-        for k in eachindex(π)
-            w[k] = π[k] == 0 ? -Inf : log(π[k]) + logtpdf(r[j], v[j] + σ2[k], νj[j], tconst(νj[j]))
+        for k in 1:K, l in 1:M
+            w[k, l] = π[k] == 0 || N.w[j, l] == 0 ? -Inf :
+                log(π[k]) + log(N.w[j, l]) + logtpdf(r[j], N.v[j, l] + σ2[k], N.ν[j, l], N.c[j, l])
         end
         w .= exp.(w .- maximum(w))
         w ./= sum(w)
         m1 = m2 = pneg = ppos = pzero = 0.0
-        for k in eachindex(π)
+        for k in 1:K, l in 1:M
+            w[k, l] == 0 && continue
             if σ2[k] == 0
-                pzero += w[k]
+                pzero += w[k, l]
             else
-                vk = σ2[k] * v[j] / (σ2[k] + v[j])
-                mk = σ2[k] / (σ2[k] + v[j]) * r[j]
-                m1 += w[k] * mk
-                m2 += w[k] * (vk + mk^2)
+                v = N.v[j, l]
+                vk = σ2[k] * v / (σ2[k] + v)
+                mk = σ2[k] / (σ2[k] + v) * r[j]
+                m1 += w[k, l] * mk
+                m2 += w[k, l] * (vk + mk^2)
                 pk = cdf(Normal(), -mk / sqrt(vk))
-                pneg += w[k] * pk
-                ppos += w[k] * (1 - pk)
+                pneg += w[k, l] * pk
+                ppos += w[k, l] * (1 - pk)
             end
         end
         out.mean[j] = m1
@@ -219,14 +270,14 @@ mass), the likelihood ratio of the non-null mixture to the null, eⱼ = qⱼ(r�
 qⱼ = Σₖ₌₂ πₖ N(0, vⱼ + σₖ²) / (1 - π₁), equivalently eⱼ = π₁ / (1 - π₁) × (1 - lfdrⱼ) / lfdrⱼ;
 with an estimated prior they are asymptotically valid compound e-values
 """
-function evalues(r::AbstractVector{<:Real}, v::AbstractVector{<:Real}, σ::AbstractVector{<:Real}, π::AbstractVector{<:Real}; ν = Inf)
-    νj = gene_df(ν, length(r))
+evalues(r::AbstractVector{<:Real}, v::AbstractVector{<:Real}, σ::AbstractVector{<:Real}, π::AbstractVector{<:Real}; ν = Inf) =
+    evalues(r, NoiseModel(v, ν), σ, π)
+function evalues(r::AbstractVector{<:Real}, N::NoiseModel, σ::AbstractVector{<:Real}, π::AbstractVector{<:Real})
     π0 = π[1]
     e = zeros(length(r))
     for j in eachindex(r)
-        c = tconst(νj[j])
-        l0 = logtpdf(r[j], v[j], νj[j], c)
-        num = sum(π[k] * exp(logtpdf(r[j], v[j] + σ[k]^2, νj[j], c) - l0) for k in 2:length(π); init = 0.0)
+        l0 = lognoise(N, j, r[j], 0.0)
+        num = sum(π[k] * exp(lognoise(N, j, r[j], σ[k]^2) - l0) for k in 2:length(π); init = 0.0)
         e[j] = num / max(1 - π0, 1.0e-300)
     end
     return e

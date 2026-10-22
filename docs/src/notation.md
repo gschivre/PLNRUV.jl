@@ -48,14 +48,20 @@
   adult stem and progenitor cells. *Cell Rep.* 42, 111978.
 - Laosuntisuk K. et al. (2024) A normalization method that controls for total RNA abundance affects the identification
   of differentially expressed genes, revealing bias toward morning-expressed responses. *Plant J.* 118, 1241–1257.
+- Law C. W., Chen Y., Shi W. & Smyth G. K. (2014) voom: precision weights unlock linear model analysis tools for
+  RNA-seq read counts. *Genome Biol.* 15, R29.
 - Lawson C. L. & Hanson R. J. (1974) *Solving Least Squares Problems*. Prentice-Hall.
 - Lovén J. et al. (2012) Revisiting global gene expression analysis. *Cell* 151, 476–482.
 - Lu M. & Stephens M. (2016) Variance adaptive shrinkage (vash): flexible empirical Bayesian estimation of variances.
   *Bioinformatics* 32, 3428–3434.
+- Lu M. & Stephens M. (2019) Empirical Bayes estimation of normal means, accounting for uncertainty in estimated
+  standard errors. arXiv:1901.10679.
 - Marguerat S. et al. (2012) Quantitative analysis of fission yeast transcriptomes and proteomes in proliferating and
   quiescent cells. *Cell* 151, 671–683.
 - McKnight J. N. et al. (2015) Global promoter targeting of a conserved lysine deacetylase for transcriptional
   shutoff during quiescence entry. *Mol. Cell* 59, 732–743.
+- Neufeld A., Gao L. L., Popp J., Battle A. & Witten D. (2024) Inference after latent variable estimation for
+  single-cell RNA sequencing data. *Biostatistics* 25, 270–287.
 - Nie Z. et al. (2012) c-Myc is a universal amplifier of expressed genes in lymphocytes and embryonic stem cells.
   *Cell* 151, 68–79.
 - Owen A. B. & Wang J. (2016) Bi-cross-validation for factor analysis. *Stat. Sci.* 31, 119–139.
