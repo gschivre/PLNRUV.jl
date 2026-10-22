@@ -30,9 +30,14 @@ function factor_analysis(Y::AbstractMatrix{<:Real}, q::Integer; offset_factor::B
     return (F = F, σ2 = σ2)
 end
 
-#maximise Q(λ) = Σⱼₖ wⱼₖ log N(rⱼ; 0, λ sⱼ² + σₖ²) over log λ ∈ [-5, 5] by golden-section search
-function update_λ(r, s2, σ2, W; lo = -5.0, hi = 5.0, tol = 1.0e-6)
-    Q(logλ) = sum(W[j, k] == 0 ? 0.0 : W[j, k] * lognormpdf(r[j], exp(logλ) * s2[j] + σ2[k]) for j in eachindex(r), k in eachindex(σ2))
+#maximise Q(λ) = Σⱼₖ wⱼₖ log N(rⱼ; 0, λ sⱼ² + σₖ²) (or the t density with νⱼ degrees of freedom) over
+#log λ ∈ [-5, 5] by golden-section search
+function update_λ(r, s2, σ2, W; ν = fill(Inf, length(r)), lo = -5.0, hi = 5.0, tol = 1.0e-6)
+    cν = tconst.(ν)
+    Q(logλ) = sum(
+        W[j, k] == 0 ? 0.0 : W[j, k] * logtpdf(r[j], exp(logλ) * s2[j] + σ2[k], ν[j], cν[j])
+            for j in eachindex(r), k in eachindex(σ2)
+    )
     g = (sqrt(5) - 1) / 2
     a, b = lo, hi
     c, d = b - g * (b - a), a + g * (b - a)
@@ -58,9 +63,11 @@ end
 #(as in the CATE variance of Wang et al.): λ (sⱼ² + Γⱼ' V Γⱼ), V = (Γ_C diag(1 / s_C²) Γ_C')⁻¹ with controls; without
 #controls, V is the inverse weighted Gram matrix of the α step at convergence, and the prior is refitted
 function mouthwash_fit(
-        β̃, s, Γ, controls; nullweight = 10, estimate_λ = true, alpha_uncertainty = true, tol = 1.0e-7, maxiter = 500
+        β̃, s, Γ, controls; nullweight = 10, estimate_λ = true, alpha_uncertainty = true, df = Inf, tol = 1.0e-7,
+        maxiter = 500
     )
     p = length(β̃)
+    ν = gene_df(df, p) #degrees of freedom of each sⱼ (Inf: normal likelihood)
     s2 = s .^ 2
     free = setdiff(1:p, controls)
     #α from the controls only (weights 1 / sⱼ², λ cancels), or a starting value from all genes without controls
@@ -87,7 +94,7 @@ function mouthwash_fit(
     π = fill(1 / K, K)
     obj = -Inf
     for _ in 1:maxiter
-        mixture_lik!(Lik, logscale, r, s2, σ2, λ)
+        mixture_lik!(Lik, logscale, r, s2, σ2, λ; ν = ν)
         π, _ = mixture_weights(Lik, logscale, free, prior; π0 = π)
         #observed penalised log-likelihood (controls only use the point mass)
         objnew = mixture_objective(π, Lik, logscale, free, prior) + sum(j -> log(Lik[j, 1]) + logscale[j], controls; init = 0.0)
@@ -109,7 +116,7 @@ function mouthwash_fit(
             α = Symmetric(Γ * (c .* Γ')) \ (Γ * (c .* β̃))
             r = β̃ - Γ' * α
         end
-        estimate_λ && (λ = update_λ(r, s2, σ2, W))
+        estimate_λ && (λ = update_λ(r, s2, σ2, W; ν = ν))
     end
     v = λ .* s2
     if alpha_uncertainty && isempty(controls)
@@ -117,15 +124,15 @@ function mouthwash_fit(
         c = [sum(W[j, k] / (λ * s2[j] + σ2[k]) for k in 1:K) for j in 1:p]
         Vα = inv(Symmetric(Γ * (c .* Γ')))
         v .+= vec(sum(Γ .* (Vα * Γ); dims = 1))
-        mixture_lik!(Lik, logscale, r, v, σ2, 1.0)
+        mixture_lik!(Lik, logscale, r, v, σ2, 1.0; ν = ν)
         π, obj = mixture_weights(Lik, logscale, free, prior; π0 = π)
     end
-    post = ash_posterior(r, v, σ2, π)
+    post = ash_posterior(r, v, σ2, π; ν = ν)
     for j in controls #controls are fixed to zero
         post.mean[j] = post.sd[j] = 0.0
         post.lfsr[j] = post.lfdr[j] = 1.0
     end
-    e = evalues(r, v, grid, π)
+    e = evalues(r, v, grid, π; ν = ν)
     e[controls] .= 0.0
     return merge((α = α, λ = λ, g = (σ = grid, π = π), loglik = obj, evalue = e), post)
 end
@@ -157,17 +164,19 @@ function mouthwash(
         Y::AbstractMatrix{<:Real}, X::AbstractMatrix{<:Real}, q::Integer;
         controls::AbstractVector{<:Integer} = Int[], cov_of_interest::Integer = size(X, 2),
         offset_factor::Bool = true, nullweight::Real = 10, estimate_λ::Bool = true, shrink_var::Symbol = :vash,
-        alpha_uncertainty::Bool = true
+        alpha_uncertainty::Bool = true, likelihood::Symbol = :t
     )
     rot = rotate(Y, X, [cov_of_interest])
     fa = factor_analysis(rot.Yres, q; offset_factor = offset_factor)
     R22 = rot.R22[1, 1]
     β̃ = vec(rot.Yint) ./ R22
     d = size(rot.Yres, 1) - q - Int(offset_factor) #residual degrees of freedom of the variances
-    s = sqrt.(shrink_variances(fa.σ2, d, shrink_var)) ./ abs(R22)
+    shrunk = shrink_variances(fa.σ2, d, shrink_var)
+    s = sqrt.(shrunk.s2) ./ abs(R22)
+    df = likelihood === :t ? shrunk.df : Inf #t likelihood with the degrees of freedom of the (shrunk) variances
     fit = mouthwash_fit(
         β̃, s, fa.F, collect(controls); nullweight = nullweight, estimate_λ = estimate_λ,
-        alpha_uncertainty = alpha_uncertainty
+        alpha_uncertainty = alpha_uncertainty, df = df
     )
     return MouthwashFit(
         β̃, s, fit.α, fit.λ, fit.g, fit.loglik, fit.mean, fit.sd, fit.lfsr, fit.lfdr,

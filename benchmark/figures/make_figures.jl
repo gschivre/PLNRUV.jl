@@ -1,6 +1,6 @@
 #figures of the GTEx benchmark (benchmark/results/gtex_benchmark.csv)
 #run: julia --project=benchmark/figures benchmark/figures/make_figures.jl
-#writes docs/src/figures/benchmark.png (and .svg)
+#writes docs/src/figures/benchmark.png
 using CairoMakie, Statistics
 
 const ROOT = joinpath(@__DIR__, "..", "..")
@@ -96,4 +96,3 @@ rows = read_rows(CSV)
 mkpath(OUT)
 fig = benchmark_figure(rows)
 save(joinpath(OUT, "benchmark.png"), fig; px_per_unit = 2)
-save(joinpath(OUT, "benchmark.svg"), fig)

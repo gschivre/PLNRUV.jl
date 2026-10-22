@@ -52,9 +52,9 @@ function pln_mstep(M, S2, QR, k, q, nfix, σ2, shrink_var)
     #residual variances with n - k - q - nfix degrees of freedom, shrunk across genes
     d = n - k - q - nfix
     σ2 = max.(vec(sum(abs2, M - μ; dims = 1) + sum(S2; dims = 1)) ./ d, 1.0e-8)
-    σ2 = shrink_variances(σ2, d, shrink_var)
+    shrunk = shrink_variances(σ2, d, shrink_var)
     B = UpperTriangular(QR.R) \ Mrot[1:k, :]
-    return μ, σ2, B, nfix > 0 ? [ones(1, p); Γ] : Γ
+    return μ, shrunk.s2, B, nfix > 0 ? [ones(1, p); Γ] : Γ, shrunk.df
 end
 
 struct PLNFit
@@ -65,6 +65,7 @@ struct PLNFit
     Γ::Matrix{Float64} #loadings (first row = ones with the offset factor)
     σ2::Vector{Float64} #lognormal overdispersion of each gene
     offsets::Vector{Float64}
+    df::Vector{Float64} #degrees of freedom of the overdispersions after shrinkage
     elbo::Float64
     iterations::Int
 end
@@ -90,7 +91,7 @@ function pln(
     M = log.(Y .+ 0.5) .- o
     S2 = 1 ./ (Y .+ 1.0)
     σ2 = vec(var(M; dims = 1))
-    μ, σ2, B, Γ = pln_mstep(M, S2, QR, k, q, nfix, σ2, shrink_var)
+    μ, σ2, B, Γ, df = pln_mstep(M, S2, QR, k, q, nfix, σ2, shrink_var)
     elbo = -Inf
     iter = 0
     for outer in 1:maxiter
@@ -100,13 +101,13 @@ function pln(
                 M[i, j], S2[i, j] = estep_cell(Y[i, j], o[i], μ[i, j], σ2[j], M[i, j], S2[i, j])
             end
         end
-        μ, σ2, B, Γ = pln_mstep(M, S2, QR, k, q, nfix, σ2, shrink_var)
+        μ, σ2, B, Γ, df = pln_mstep(M, S2, QR, k, q, nfix, σ2, shrink_var)
         elbonew = pln_elbo(Y, o, M, S2, μ, σ2)
         converged = abs(elbonew - elbo) < tol * abs(elbonew)
         elbo = elbonew
         converged && break
     end
-    return PLNFit(M, S2, μ, B, Γ, σ2, o, elbo, iter)
+    return PLNFit(M, S2, μ, B, Γ, σ2, o, df, elbo, iter)
 end
 
 """
@@ -121,7 +122,7 @@ function pln_mouthwash(
         Y::AbstractMatrix{<:Integer}, X::AbstractMatrix{<:Real}, q::Integer;
         controls::AbstractVector{<:Integer} = Int[], cov_of_interest::Integer = size(X, 2),
         offset_factor::Bool = true, nullweight::Real = 10, estimate_λ::Bool = true, alpha_uncertainty::Bool = true,
-        kwargs...
+        likelihood::Symbol = :t, kwargs...
     )
     fit = pln(Y, X, q; offset_factor = offset_factor, kwargs...)
     k = size(X, 2)
@@ -133,7 +134,7 @@ function pln_mouthwash(
     s = sqrt.(vec(sum(qint .^ 2 .* (fit.σ2' .+ 1 ./ λcount); dims = 1))) ./ abs(R22)
     mw = mouthwash_fit(
         β̃, s, fit.Γ, collect(controls); nullweight = nullweight, estimate_λ = estimate_λ,
-        alpha_uncertainty = alpha_uncertainty
+        alpha_uncertainty = alpha_uncertainty, df = likelihood === :t ? fit.df : Inf
     )
     return (
         pln = fit,

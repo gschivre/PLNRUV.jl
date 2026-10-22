@@ -32,7 +32,7 @@ function r_methods(counts, X, controls, q)
     logcpm <- t(cpm(y, log = TRUE))
     ct <- cate(~ grp | 1, data.frame(grp = grp), Y = logcpm, r = $q, adj.method = "nc", nc = $ctrl, calibrate = FALSE)
     cater <- cbind(as.numeric(ct$beta), p.adjust(as.numeric(ct$beta.p.value), "BH"))
-    mw <- mouthwash(Y = logcpm, X = design, k = $q, cov_of_interest = 2, include_intercept = FALSE, verbose = FALSE)
+    mw <- mouthwash(Y = logcpm, X = design, k = $q, cov_of_interest = 2, include_intercept = FALSE, verbose = FALSE) #vicar defaults: normal likelihood, limma shrinkage
     vicarr <- cbind(mw$result$PosteriorMean, mw$result$svalue)
     """
     for (name, sym) in [

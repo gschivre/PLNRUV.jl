@@ -28,11 +28,11 @@ function squeeze_var(s2::AbstractVector{<:Real}, d::Real)
     v = sum(abs2, e .- ē) / (p - 1) - trigamma(d / 2)
     if v <= 0 #no evidence of variance heterogeneity: complete pooling
         s02 = exp(ē + digamma(d / 2) - log(d / 2))
-        return (s2 = fill(s02, p), d0 = Inf, s02 = s02)
+        return (s2 = fill(s02, p), d0 = Inf, s02 = s02, df = fill(Inf, p))
     end
     d0 = 2 * trigamma_inverse(v)
     s02 = exp(ē + digamma(d0 / 2) - log(d0 / 2))
-    return (s2 = (d0 * s02 .+ d .* s2) ./ (d0 + d), d0 = d0, s02 = s02)
+    return (s2 = (d0 * s02 .+ d .* s2) ./ (d0 + d), d0 = d0, s02 = s02, df = fill(d0 + d, p))
 end
 
 """
@@ -94,18 +94,20 @@ function vash(s2::AbstractVector{<:Real}, d::Real; shapes = 2.0 .^ (-2:0.5:12))
     c = exp(logc)
     #posterior of the precisions: Σₖ wⱼₖ Gamma(aₖ + d / 2, rate aₖ c + d s²ⱼ / 2)
     post = zeros(p)
+    df = zeros(p) #effective degrees of freedom: the predictive is a mixture of t with 2aₖ + d degrees of freedom
     for j in 1:p
         w = view(Lik, j, :) .* π
         w ./= sum(w)
         post[j] = 1 / sum(w[k] * (shapes[k] + d / 2) / (shapes[k] * c + d * s2[j] / 2) for k in 1:K)
+        df[j] = sum(w[k] * (2 * shapes[k] + d) for k in 1:K)
     end
-    return (s2 = post, π = π, c = c, shapes = collect(shapes))
+    return (s2 = post, π = π, c = c, shapes = collect(shapes), df = df)
 end
 
-#dispatch on the shrinkage method (:vash, :limma or :none)
+#dispatch on the shrinkage method (:vash, :limma or :none): the shrunk variances and their degrees of freedom
 function shrink_variances(s2::AbstractVector{<:Real}, d::Real, method::Symbol)
-    method === :none && return collect(float.(s2))
-    method === :limma && return squeeze_var(s2, d).s2
-    method === :vash && return vash(s2, d).s2
+    method === :none && return (s2 = collect(float.(s2)), df = fill(float(d), length(s2)))
+    method === :limma && return squeeze_var(s2, d)[(:s2, :df)]
+    method === :vash && return vash(s2, d)[(:s2, :df)]
     throw(ArgumentError("unknown variance shrinkage method $method (use :vash, :limma or :none)"))
 end

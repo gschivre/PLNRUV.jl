@@ -5,6 +5,16 @@
 #log density of N(0, v) at x
 lognormpdf(x::Real, v::Real) = -0.5 * (log(2π) + log(v) + x^2 / v)
 
+#normalising constant of the Student t density with ν degrees of freedom (ν = Inf: the normal)
+tconst(ν::Real) = isinf(ν) ? -0.5 * log(2π) : loggamma((ν + 1) / 2) - loggamma(ν / 2) - 0.5 * log(ν * π)
+
+#log density at x of a t with ν degrees of freedom and squared scale v (normal when ν = Inf); c = tconst(ν)
+logtpdf(x::Real, v::Real, ν::Real, c::Real) = isinf(ν) ? lognormpdf(x, v) : c - 0.5 * log(v) - (ν + 1) / 2 * log1p(x^2 / (ν * v))
+
+#degrees of freedom of each estimate: a scalar (Inf for the normal likelihood) or one value per gene
+gene_df(ν::Real, p) = fill(float(ν), p)
+gene_df(ν::AbstractVector, p) = collect(float.(ν))
+
 #grid of prior standard deviations: from min(s) / 10 to 2 * sqrt(max(r² - s²)), multiplicative step mult
 function ash_grid(r::AbstractVector{<:Real}, s::AbstractVector{<:Real}; mult::Real = sqrt(2))
     σmin = minimum(s) / 10
@@ -15,11 +25,15 @@ function ash_grid(r::AbstractVector{<:Real}, s::AbstractVector{<:Real}; mult::Re
 end
 
 #component likelihoods Lⱼₖ = N(rⱼ; 0, λ sⱼ² + σₖ²) scaled by their row maximum (returned in logscale)
-function mixture_lik!(Lik, logscale, r, s2, σ2, λ)
+#with ν (degrees of freedom of each sⱼ) the normal is replaced by a t with scale √(λ sⱼ² + σₖ²), the usual
+#approximation of the convolution of a t likelihood with a normal mixture (exact for the point mass)
+function mixture_lik!(Lik, logscale, r, s2, σ2, λ; ν = Inf)
+    νj = gene_df(ν, length(r))
     for j in eachindex(r)
         m = -Inf
+        c = tconst(νj[j])
         for k in eachindex(σ2)
-            Lik[j, k] = lognormpdf(r[j], λ * s2[j] + σ2[k])
+            Lik[j, k] = logtpdf(r[j], λ * s2[j] + σ2[k], νj[j], c)
             m = max(m, Lik[j, k])
         end
         logscale[j] = m
@@ -121,13 +135,14 @@ function mixture_weights(Lik, logscale, free, prior; π0 = fill(1 / size(Lik, 2)
 end
 
 #posterior summaries of βⱼ given rⱼ ~ N(βⱼ, vⱼ) and the prior Σₖ πₖ N(0, σₖ²)
-function ash_posterior(r, v, σ2, π)
+function ash_posterior(r, v, σ2, π; ν = Inf)
+    νj = gene_df(ν, length(r))
     p = length(r)
     out = (mean = zeros(p), sd = zeros(p), lfsr = zeros(p), lfdr = zeros(p))
     w = similar(π)
     for j in 1:p
         for k in eachindex(π)
-            w[k] = π[k] == 0 ? -Inf : log(π[k]) + lognormpdf(r[j], v[j] + σ2[k])
+            w[k] = π[k] == 0 ? -Inf : log(π[k]) + logtpdf(r[j], v[j] + σ2[k], νj[j], tconst(νj[j]))
         end
         w .= exp.(w .- maximum(w))
         w ./= sum(w)
@@ -182,16 +197,16 @@ end
 
 ash for estimates r with standard errors s, nullweight is the Dirichlet weight of the point mass
 """
-function ash(r::AbstractVector{<:Real}, s::AbstractVector{<:Real}; nullweight::Real = 10, grid = ash_grid(r, s))
+function ash(r::AbstractVector{<:Real}, s::AbstractVector{<:Real}; nullweight::Real = 10, grid = ash_grid(r, s), df = Inf)
     @assert length(r) == length(s) && all(>(0), s)
     σ2 = grid .^ 2
     s2 = s .^ 2
     Lik = zeros(length(r), length(σ2))
     logscale = zeros(length(r))
-    mixture_lik!(Lik, logscale, r, s2, σ2, 1.0)
+    mixture_lik!(Lik, logscale, r, s2, σ2, 1.0; ν = df)
     prior = [nullweight; ones(length(σ2) - 1)]
     π, obj = mixture_weights(Lik, logscale, eachindex(r), prior)
-    post = ash_posterior(r, s2, σ2, π)
+    post = ash_posterior(r, s2, σ2, π; ν = df)
     return AshFit(collect(grid), π, obj, post.mean, post.sd, post.lfsr, post.lfdr, cumulative_rate(post.lfsr), cumulative_rate(post.lfdr))
 end
 
@@ -204,12 +219,14 @@ mass), the likelihood ratio of the non-null mixture to the null, eⱼ = qⱼ(r�
 qⱼ = Σₖ₌₂ πₖ N(0, vⱼ + σₖ²) / (1 - π₁), equivalently eⱼ = π₁ / (1 - π₁) × (1 - lfdrⱼ) / lfdrⱼ;
 with an estimated prior they are asymptotically valid compound e-values
 """
-function evalues(r::AbstractVector{<:Real}, v::AbstractVector{<:Real}, σ::AbstractVector{<:Real}, π::AbstractVector{<:Real})
+function evalues(r::AbstractVector{<:Real}, v::AbstractVector{<:Real}, σ::AbstractVector{<:Real}, π::AbstractVector{<:Real}; ν = Inf)
+    νj = gene_df(ν, length(r))
     π0 = π[1]
     e = zeros(length(r))
     for j in eachindex(r)
-        l0 = lognormpdf(r[j], v[j])
-        num = sum(π[k] * exp(lognormpdf(r[j], v[j] + σ[k]^2) - l0) for k in 2:length(π); init = 0.0)
+        c = tconst(νj[j])
+        l0 = logtpdf(r[j], v[j], νj[j], c)
+        num = sum(π[k] * exp(logtpdf(r[j], v[j] + σ[k]^2, νj[j], c) - l0) for k in 2:length(π); init = 0.0)
         e[j] = num / max(1 - π0, 1.0e-300)
     end
     return e
