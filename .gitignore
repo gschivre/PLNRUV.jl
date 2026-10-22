@@ -9,3 +9,5 @@
 *.tsv
 *.csv
 /data/
+/testenv/
+/benchmark/figures/Manifest*.toml

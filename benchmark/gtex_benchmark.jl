@@ -40,9 +40,71 @@ function r_methods(counts, X, controls, q)
             ("cate_nc", "cater"), ("vicar_mouthwash", "vicarr"),
         ]
         m = rcopy(reval(sym))
-        out[name] = (m[:, 1], replace(m[:, 2], NaN => 1.0))
+        #genes the method cannot test (NA in R: all-zero counts, outliers) get no effect and are never called
+        lfc = Float64[ismissing(x) || isnan(x) ? 0.0 : x for x in m[:, 1]]
+        padj = Float64[ismissing(x) || isnan(x) ? 1.0 : x for x in m[:, 2]]
+        out[name] = (lfc, padj)
     end
     return out
+end
+
+#DESeq2 median-of-ratios size factors computed on a set of reference genes (rows of d: genes, columns: samples)
+function size_factors(d, ref)
+    ratios = [d[g, :] ./ exp(mean(log.(d[g, :]))) for g in ref if minimum(d[g, :]) > 0]
+    sf = [median(r[i] for r in ratios) for i in axes(d, 2)]
+    return sf ./ exp(mean(log.(sf)))
+end
+
+#the spike-in/reference CATE pipeline of Schivre et al. (Nat. Commun. 2025): size factors on the controls,
+#CATE (ESA, negative controls) on the log2 counts, corrected counts, size factors recomputed on the corrected
+#controls, then DESeq2 with these size factors
+function paper_method(counts, X, controls, q)
+    Yt = permutedims(counts)
+    ctrl = collect(controls)
+    sf = size_factors(Yt, ctrl)
+    logcts = log2.(counts .+ 0.5) .- log2.(sf)
+    grp = X[:, 2]
+    R"""
+    ct <- cate::cate(~ grp | 1, data.frame(grp = factor($grp)), Y = $logcts, r = $q, fa.method = "esa",
+                     adj.method = "nc", nc = $ctrl, nc.var.correction = FALSE, calibrate = FALSE)
+    """
+    ZΓ = rcopy(R"ct$Z %*% t(ct$Gamma)")
+    corrected = round.(Int, max.(0.0, permutedims(2 .^ (logcts .- ZΓ) .* sf .- 0.5)))
+    sfc = size_factors(corrected, ctrl)
+    R"""
+    dds <- DESeq2::DESeqDataSetFromMatrix($corrected, data.frame(grp = factor($grp)), ~ grp)
+    DESeq2::sizeFactors(dds) <- $sfc
+    res <- DESeq2::results(DESeq2::DESeq(dds, quiet = TRUE), name = "grp_1_vs_0")
+    paper <- cbind(res$log2FoldChange, res$padj)
+    """
+    m = rcopy(R"paper")
+    lfc = Float64[ismissing(x) || isnan(x) ? 0.0 : x for x in m[:, 1]]
+    padj = Float64[ismissing(x) || isnan(x) ? 1.0 : x for x in m[:, 2]]
+    return Dict("paper_RNARx_CATE" => (lfc, padj))
+end
+
+#run one extra method on the same simulated data sets as run_benchmark (same seeds) and append to the CSV
+function run_extra(M, method; nrep = 10, ngenes = 2_000, nctrl = 200, nsamp = 20, q = 2, seed = 1, outfile = nothing)
+    rows = []
+    for sc in SCENARIOS, r in 1:nrep
+        rng = Xoshiro(seed + r)
+        sim = thin_2group(
+            rng, M; ngenes = ngenes, nsamp = nsamp, nctrl = nctrl, prop_null = sc.prop_null,
+            signal = sc.signal, target_cor = sc.target_cor
+        )
+        idx = setdiff(1:ngenes, sim.controls)
+        for (name, (lfc, qv)) in method(sim.counts, sim.X, sim.controls, q)
+            push!(rows, (scenario = sc.name, rep = r, method = name, metrics(lfc, qv, sim.β, idx)...))
+        end
+    end
+    if outfile !== nothing
+        open(outfile, "a") do io
+            for x in rows
+                println(io, join((x.scenario, x.rep, x.method, x.ndisc, x.fdp, x.power, x.rmse), ","))
+            end
+        end
+    end
+    return rows
 end
 
 #PLNRUV methods: log2 fold changes and s-values
