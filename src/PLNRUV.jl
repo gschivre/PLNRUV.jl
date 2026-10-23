@@ -23,6 +23,7 @@ include("ash.jl")
 include("varshrink.jl")
 include("mouthwash.jl")
 include("pln.jl")
+include("plnpca.jl")
 include("countsplit.jl")
 include("show.jl")
 
