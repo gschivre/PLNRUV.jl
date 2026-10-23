@@ -1,6 +1,7 @@
 /Manifest*.toml
 /benchmark/Manifest*.toml
 /docs/build/
+/benchmark/results/
 
 # count data (e.g. GTEx bulk and single-nucleus) are not distributed with the package
 *.gct

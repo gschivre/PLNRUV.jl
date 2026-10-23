@@ -60,6 +60,8 @@
   quiescent cells. *Cell* 151, 671–683.
 - McKnight J. N. et al. (2015) Global promoter targeting of a conserved lysine deacetylase for transcriptional
   shutoff during quiescence entry. *Mol. Cell* 59, 732–743.
+- Neufeld A., Dharamshi A., Gao L. L. & Witten D. (2024) Data thinning for convolution-closed distributions.
+  *J. Mach. Learn. Res.* 25(57), 1–35.
 - Neufeld A., Gao L. L., Popp J., Battle A. & Witten D. (2024) Inference after latent variable estimation for
   single-cell RNA sequencing data. *Biostatistics* 25, 270–287.
 - Nie Z. et al. (2012) c-Myc is a universal amplifier of expressed genes in lymphocytes and embryonic stem cells.

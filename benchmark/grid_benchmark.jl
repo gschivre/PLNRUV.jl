@@ -1,0 +1,286 @@
+#FDP and power as the number of replicates and the signal strength vary, on binomially thinned GTEx data, with two
+#oracles: known confounders and normalisation (oracle_design), and in addition the true effect prior (oracle_prior)
+#run from the benchmark environment: julia -t auto --project=benchmark benchmark/grid_benchmark.jl <gtex counts file>
+#runs the 20-sample benchmark (exact and misspecified controls) and the grid; for each, in benchmark/results/:
+#<name>.csv (summary at level 0.05), <name>_curves.csv (calibration and ranked curves by expression tercile) and
+#<name>_datasets/ (one .jls per simulated data set: truth and every method's output)
+include(joinpath(@__DIR__, "gtex_benchmark.jl"))
+using LinearAlgebra, Serialization
+
+#nominal levels of the calibration / FDP-power curves, and observed FDP targets of the ranked curves
+const LEVELS = [0.001, 0.005, 0.01, 0.02, 0.05, 0.1, 0.15, 0.2]
+const FDP_TARGETS = [0.01, 0.05, 0.1]
+
+#genes of idx by tercile of their mean count (low, mid, high), and all of them
+function strata(meancount, idx)
+    t = quantile(meancount[idx], [1 / 3, 2 / 3])
+    return [
+        "all" => idx, "low" => idx[meancount[idx] .<= t[1]],
+        "mid" => idx[t[1] .< meancount[idx] .<= t[2]], "high" => idx[meancount[idx] .> t[2]],
+    ]
+end
+
+#curve rows of one method: at each nominal level (kind "nominal": genes with q < level) and at each observed FDP
+#target when genes are ranked by q (kind "ranked": the largest prefix whose FDP is at most the target);
+#a discovery is false when the gene is null or its sign is wrong
+function curve_rows(prefix, lfc, qv, β, meancount, idx)
+    rows = String[]
+    for (name, genes) in strata(meancount, idx)
+        nsig = max(count(!=(0), β[genes]), 1)
+        wrong = (β[genes] .== 0) .| (sign.(β[genes]) .!= sign.(lfc[genes]))
+        for level in LEVELS
+            d = qv[genes] .< level
+            nd = count(d)
+            fdp = nd == 0 ? 0.0 : count(d .& wrong) / nd
+            push!(rows, join((prefix, name, "nominal", level, nd, fdp, count(d .& .!wrong) / nsig), ","))
+        end
+        order = sortperm(qv[genes])
+        fdps = cumsum(wrong[order]) ./ (1:length(order))
+        for t in FDP_TARGETS
+            k = something(findlast(<=(t), fdps), 0)
+            push!(rows, join((prefix, name, "ranked", t, k, k == 0 ? 0.0 : fdps[k], count(.!wrong[order[1:k]]) / nsig), ","))
+        end
+    end
+    return rows
+end
+
+#set STOP[] = true to stop a background run after the current data set
+const STOP = Ref(false)
+
+#progress line in results/run.log (background runs have no eval to report to)
+function logline(msg)
+    open(io -> println(io, Libc.strftime("%Y-%m-%d %H:%M:%S", time()), " ", msg), joinpath(@__DIR__, "results", "run.log"), "a")
+    return nothing
+end
+
+const CURVE_HEADER = "stratum,kind,level,ndisc,fdp,power"
+
+#everything a figure might need later, as plain types (no package structs, so the file stays readable when
+#PLNRUV changes): truth, mean counts and each method's log2 fold changes and adjusted p- or s-values
+function save_dataset(dir, key, sim, res)
+    mkpath(dir)
+    data = (
+        julia = string(VERSION), β = sim.β, controls = sim.controls, meancount = vec(mean(sim.counts; dims = 1)),
+        genes = sim.genes, samples = sim.samples, X = sim.X, methods = Dict(m => (lfc = l, q = v) for (m, (l, v)) in res),
+    )
+    serialize(joinpath(dir, key * ".jls"), data)
+    return nothing
+end
+
+const NPERGROUP = [2, 3, 5, 10, 15]
+const SIGNAL = [0.4, 0.8, 1.6]
+
+#scenarios at signal strength s: the effect sd (and the mean shift of the global scenario) scale with s, s = 0.8 being
+#the scenarios of gtex_benchmark.jl
+grid_scenarios(s) = [
+    (name = "balanced", prop_null = 0.8, signal = Normal(0.0, s), target_cor = Float64[]),
+    (name = "confounded", prop_null = 0.8, signal = Normal(0.0, s), target_cor = [0.6, 0.2]),
+    (name = "global_increase", prop_null = 0.4, signal = Normal(1.25s, 0.625s), target_cor = [0.6, 0.2]),
+]
+
+#latent factors that the residual degrees of freedom allow: the compositional offset takes one of the n - 2
+nfactors(n) = clamp(n - 4, 0, 2)
+
+#each method separately, so that one method failing on a small design (e.g. cate or vicar with q = 0) only loses
+#its own rows
+function safely(f, args...)
+    return try
+        f(args...)
+    catch err
+        @warn "method failed" f err
+        Dict{String, Tuple{Vector{Float64}, Vector{Float64}}}()
+    end
+end
+
+#DESeq2 median-of-ratios size factors on the truly null genes (untouched by the thinning): the oracle normalisation
+oracle_offsets(counts, nulls) = log.(size_factors(permutedims(counts), nulls))
+
+#oracle_design: PLN with the surrogate factors used to confound the group as covariates and the oracle normalisation
+#(no compositional offset to estimate); latent factors still absorb the other hidden structure of the real samples,
+#and the controls let the effect prior find the mode of a global change; oracle_prior: the same estimates with the
+#true effect prior in place of the fitted ash prior
+function oracle_methods(sim, sc)
+    n = size(sim.counts, 1)
+    U = sim.factors
+    X = Float64[ones(n) U sim.X[:, 2]]
+    q = max(0, min(2, n - size(X, 2) - 2)) #at least 2 residual degrees of freedom for the variances
+    #only the null genes: the controls are untouched only when they are exact
+    nulls = sim.null
+    fit = pln_mouthwash(
+        sim.counts, X, q; controls = sim.controls, offsets = oracle_offsets(sim.counts, nulls), offset_factor = false
+    )
+    mw = fit.mouthwash
+    out = Dict("oracle_design" => (mw.mean ./ log(2), mw.svalue))
+    #true prior in natural log units; the controls are part of the null spike
+    p = size(sim.counts, 2)
+    nsig = length(sim.signal)
+    d = sc.signal
+    π = [1 - nsig / p, nsig / p]
+    σ2 = [0.0, (std(d) * log(2))^2]
+    means = [0.0, mean(d) * log(2)]
+    #the corrected estimates and their noise as in mouthwash_fit (default t likelihood): control-based α, its
+    #uncertainty added to the variances, then the fitted inflation
+    Γ, s2, ctrl = fit.pln.Γ, mw.s .^ 2, sim.controls
+    a = zeros(p)
+    if q > 0
+        ΓC = Γ[:, ctrl]
+        G = Symmetric(ΓC * (ΓC' ./ s2[ctrl]))
+        free = setdiff(1:p, ctrl)
+        a[free] .= vec(sum(Γ[:, free] .* (G \ Γ[:, free]); dims = 1))
+    end
+    r = q > 0 ? mw.β̃ - Γ' * mw.α : mw.β̃
+    N = PLNRUV.scale_noise(PLNRUV.NoiseModel(s2 .+ a, fit.pln.df), mw.λ)
+    post = PLNRUV.ash_posterior(r, N, σ2, π; means = means)
+    out["oracle_prior"] = (post.mean ./ log(2), PLNRUV.cumulative_rate(post.lfsr))
+    return out
+end
+
+function grid_methods(sim, sc, q)
+    c, X, ctrl = sim.counts, sim.X, sim.controls
+    out = Dict{String, Tuple{Vector{Float64}, Vector{Float64}}}()
+    merge!(out, safely(r_methods, c, X, ctrl, q))
+    merge!(out, safely(paper_method, c, X, ctrl, q))
+    merge!(out, safely((c, X, ctrl, q) -> julia_methods(c, X, ctrl, q; bayes = false), c, X, ctrl, q))
+    merge!(out, safely(oracle_methods, sim, sc))
+    return out
+end
+
+function run_grid(M; nrep = 10, ngenes = 2_000, nctrl = 200, seed = 1, outfile = nothing, done = Set{Tuple}())
+    header = "scenario,npergroup,signal,rep,q,method,ndisc,fdp,power,rmse"
+    if outfile !== nothing && !isfile(outfile)
+        write(outfile, header * "\n")
+    end
+    for g in NPERGROUP, s in SIGNAL, sc in grid_scenarios(s), r in 1:nrep
+        (sc.name, g, s, r) in done && continue
+        STOP[] && return nothing
+        #the same seeds across signal strengths and scenarios: the same samples and genes, only the effects differ
+        sim = thin_2group(
+            Xoshiro(seed + 100g + r), M; ngenes = ngenes, nsamp = 2g, nctrl = nctrl, prop_null = sc.prop_null,
+            signal = sc.signal, target_cor = sc.target_cor
+        )
+        q = nfactors(2g)
+        idx = setdiff(1:ngenes, sim.controls)
+        res = grid_methods(sim, sc, q)
+        meancount = vec(mean(sim.counts; dims = 1))
+        rows, crows = String[], String[]
+        for (method, (lfc, qv)) in res
+            x = metrics(lfc, qv, sim.β, idx)
+            push!(rows, join((sc.name, g, s, r, q, method, x.ndisc, x.fdp, x.power, x.rmse), ","))
+            append!(crows, curve_rows(join((sc.name, g, s, r, method), ","), lfc, qv, sim.β, meancount, idx))
+        end
+        #appended after each data set, so an interrupted run can resume (pass the finished cells as done)
+        if outfile !== nothing
+            open(io -> foreach(l -> println(io, l), rows), outfile, "a")
+            cfile = replace(outfile, ".csv" => "_curves.csv")
+            isfile(cfile) || write(cfile, "scenario,npergroup,signal,rep,method," * CURVE_HEADER * "\n")
+            open(io -> foreach(l -> println(io, l), crows), cfile, "a")
+            save_dataset(replace(outfile, ".csv" => "_datasets"), "$(sc.name)_n$(g)_s$(s)_r$(r)", sim, res)
+        end
+        logline("grid $(sc.name) n/group = $g signal = $s rep $r")
+    end
+    return nothing
+end
+
+#oracle rows of the 20-sample benchmark (gtex_benchmark.csv): same seeds and scenarios as run_benchmark, previous
+#oracle rows replaced
+function oracle_rows(M, file; nrep = 10, ngenes = 2_000, nctrl = 200, nsamp = 20, seed = 1)
+    lines = readlines(file)
+    kept = filter(l -> !startswith(split(l, ",")[3], "oracle_"), lines[2:end])
+    rows = String[]
+    for sc in SCENARIOS, r in 1:nrep
+        sim = thin_2group(
+            Xoshiro(seed + r), M; ngenes = ngenes, nsamp = nsamp, nctrl = nctrl, prop_null = sc.prop_null,
+            signal = sc.signal, target_cor = sc.target_cor
+        )
+        idx = setdiff(1:ngenes, sim.controls)
+        for (method, (lfc, qv)) in oracle_methods(sim, sc)
+            x = metrics(lfc, qv, sim.β, idx)
+            push!(rows, join((sc.name, r, method, x.ndisc, x.fdp, x.power, x.rmse), ","))
+        end
+    end
+    write(file, join([lines[1]; kept; rows], "\n") * "\n")
+    return rows
+end
+
+#misspecified negative controls, 20 samples: noisy (each control has a small effect of its own) or biased (the
+#controls shift together with the group, as a spike-in whose amount follows the condition)
+const CTRL_SCENARIOS = [
+    (name = "confounded_noisy_ctrl", prop_null = 0.8, signal = Normal(0.0, 0.8), target_cor = [0.6, 0.2], ctrl = Normal(0.0, 0.2)),
+    (name = "confounded_biased_ctrl", prop_null = 0.8, signal = Normal(0.0, 0.8), target_cor = [0.6, 0.2], ctrl = Normal(0.15, 0.05)),
+    (name = "global_noisy_ctrl", prop_null = 0.4, signal = Normal(1.0, 0.5), target_cor = [0.6, 0.2], ctrl = Normal(0.0, 0.2)),
+    (name = "global_biased_ctrl", prop_null = 0.4, signal = Normal(1.0, 0.5), target_cor = [0.6, 0.2], ctrl = Normal(0.15, 0.05)),
+]
+
+#the scenarios of gtex_benchmark.jl, with exact controls
+const MAIN_SCENARIOS = [merge(sc, (ctrl = Dirac(0.0),)) for sc in SCENARIOS]
+
+#20-sample benchmark on a list of scenarios (MAIN_SCENARIOS: gtex_benchmark.csv; CTRL_SCENARIOS: gtex_controls.csv),
+#all methods but the fully Bayesian branch; same seeds as gtex_benchmark.jl, so a misspecified-control data set
+#differs from its exact-control twin only by the control effects; rows in the format of gtex_benchmark.csv, appended
+#after each data set (an interrupted run resumes)
+function run_scenarios(M, scenarios, file; nrep = 10, ngenes = 2_000, nctrl = 200, nsamp = 20, q = 2, seed = 1)
+    isfile(file) || write(file, "scenario,rep,method,ndisc,fdp,power,rmse\n")
+    done = Set((String(f[1]), parse(Int, f[2])) for f in (split(l, ",") for l in Iterators.drop(eachline(file), 1)))
+    for sc in scenarios, r in 1:nrep
+        (sc.name, r) in done && continue
+        STOP[] && return nothing
+        sim = thin_2group(
+            Xoshiro(seed + r), M; ngenes = ngenes, nsamp = nsamp, nctrl = nctrl, prop_null = sc.prop_null,
+            signal = sc.signal, ctrl_signal = sc.ctrl, target_cor = sc.target_cor
+        )
+        idx = setdiff(1:ngenes, sim.controls)
+        res = grid_methods(sim, sc, q)
+        meancount = vec(mean(sim.counts; dims = 1))
+        rows, crows = String[], String[]
+        for (method, (lfc, qv)) in res
+            x = metrics(lfc, qv, sim.β, idx)
+            push!(rows, join((sc.name, r, method, x.ndisc, x.fdp, x.power, x.rmse), ","))
+            append!(crows, curve_rows(join((sc.name, r, method), ","), lfc, qv, sim.β, meancount, idx))
+        end
+        open(io -> foreach(l -> println(io, l), rows), file, "a")
+        cfile = replace(file, ".csv" => "_curves.csv")
+        isfile(cfile) || write(cfile, "scenario,rep,method," * CURVE_HEADER * "\n")
+        open(io -> foreach(l -> println(io, l), crows), cfile, "a")
+        save_dataset(replace(file, ".csv" => "_datasets"), "$(sc.name)_r$(r)", sim, res)
+        logline("$(basename(file)) $(sc.name) rep $r")
+    end
+    return nothing
+end
+
+#all the GTEx benchmarks in sequence as a background task of the session (the eval returns at once); each step
+#resumes from its files, progress and errors go to results/run.log, STOP[] = true stops after the current data set
+function launch(M)
+    dir = joinpath(@__DIR__, "results")
+    STOP[] = false
+    return @async try
+        logline("start")
+        run_scenarios(M, MAIN_SCENARIOS, joinpath(dir, "gtex_benchmark.csv"))
+        run_scenarios(M, CTRL_SCENARIOS, joinpath(dir, "gtex_controls.csv"))
+        grid = joinpath(dir, "grid_benchmark.csv")
+        run_grid(M; outfile = grid, done = finished_cells(grid))
+        logline(STOP[] ? "stopped" : "done")
+    catch err
+        logline("ERROR " * sprint(showerror, err, catch_backtrace())[1:min(end, 3000)])
+    end
+end
+
+#the (scenario, n per group, signal, rep) cells already in a results file
+function finished_cells(file)
+    isfile(file) || return Set{Tuple}()
+    cells = Set{Tuple}()
+    for l in Iterators.drop(eachline(file), 1)
+        f = split(l, ",")
+        push!(cells, (String(f[1]), parse(Int, f[2]), parse(Float64, f[3]), parse(Int, f[4])))
+    end
+    return cells
+end
+
+if abspath(PROGRAM_FILE) == @__FILE__
+    gtex = read_gct(ARGS[1])
+    M = gtex.counts[filter_genes(gtex.counts; min_mean = 10), :]
+    file = joinpath(@__DIR__, "results", "grid_benchmark.csv")
+    mkpath(dirname(file))
+    run_scenarios(M, MAIN_SCENARIOS, joinpath(@__DIR__, "results", "gtex_benchmark.csv"))
+    run_scenarios(M, CTRL_SCENARIOS, joinpath(@__DIR__, "results", "gtex_controls.csv"))
+    run_grid(M; outfile = file, done = finished_cells(file))
+end

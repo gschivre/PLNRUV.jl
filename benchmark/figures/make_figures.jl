@@ -1,15 +1,17 @@
-#figures of the GTEx benchmark (benchmark/results/gtex_benchmark.csv)
-#run: julia --project=benchmark/figures benchmark/figures/make_figures.jl [methods to leave out, e.g. PLNRUV_bayes]
-#writes docs/src/figures/benchmark.png
+#figures of the GTEx benchmark (benchmark/results/gtex_benchmark.csv, and gtex_controls.csv when present)
+#run: julia --project=benchmark/figures benchmark/figures/make_figures.jl [methods to leave out, e.g. PLNRUV_gaussian_logratio]
+#writes docs/src/figures/benchmark.png (and benchmark_controls.png)
 using CairoMakie, Statistics
 
 const ROOT = joinpath(@__DIR__, "..", "..")
 const CSV = joinpath(ROOT, "benchmark", "results", "gtex_benchmark.csv")
 const OUT = joinpath(ROOT, "docs", "src", "figures")
 
-#display names, in plotting order (top to bottom), and their family
+#display names, in plotting order (top to bottom), and their family; the fully Bayesian branch (PLNRUV_bayes rows,
+#still in the CSV) is left out until its miscalibration is understood
 const METHODS = [
-    ("PLNRUV_bayes", "PLNRUV fully Bayesian", :plnruv),
+    ("oracle_prior", "Oracle: + true effect prior", :oracle),
+    ("oracle_design", "Oracle: known confounders + normalisation", :oracle),
     ("PLNRUV_EB_controls", "PLNRUV EB (controls)", :plnruv),
     ("PLNRUV_EB_sparsity", "PLNRUV EB (sparsity)", :plnruv),
     ("PLNRUV_gaussian_logratio", "PLNRUV Gaussian log-ratios", :plnruv),
@@ -26,10 +28,16 @@ const SCENARIOS = [
     ("confounded", "Confounded\ngroups correlated with 2 hidden factors"),
     ("global_increase", "Global increase\n60 % of genes up, confounded"),
 ]
+const CTRL_SCENARIOS = [
+    ("confounded_noisy_ctrl", "Confounded, noisy controls\ncontrol log₂FC ~ N(0, 0.2)"),
+    ("confounded_biased_ctrl", "Confounded, biased controls\ncontrol log₂FC ~ N(0.15, 0.05)"),
+    ("global_noisy_ctrl", "Global increase, noisy controls\ncontrol log₂FC ~ N(0, 0.2)"),
+    ("global_biased_ctrl", "Global increase, biased controls\ncontrol log₂FC ~ N(0.15, 0.05)"),
+]
 const METRICS = [(:fdp, "False discovery\nproportion"), (:power, "Power"), (:rmse, "RMSE of log₂FC")]
 
-#reference palette (light): categorical slots 1-2 and the secondary text ink for the references
-const COLORS = Dict(:plnruv => colorant"#2a78d6", :paper => colorant"#eb6834", :reference => colorant"#8a8984")
+#reference palette (light): primary ink for the oracles, categorical slots 1-2, secondary ink for the references
+const COLORS = Dict(:oracle => colorant"#0b0b0b", :plnruv => colorant"#2a78d6", :paper => colorant"#eb6834", :reference => colorant"#8a8984")
 const INK = colorant"#0b0b0b"
 const INK2 = colorant"#52514e"
 const GRID = colorant"#e6e5e1"
@@ -48,12 +56,14 @@ function stat(rows, scenario, method, metric)
     return (mean(x), length(x) > 1 ? std(x) / sqrt(length(x)) : 0.0, length(x))
 end
 
-function benchmark_figure(rows)
+const SUBTITLE = "Binomially thinned GTEx muscle data: 2 000 genes (200 negative controls), 20 samples; mean ± 1 SE over replicates. Dashed line: nominal 5 % FDR."
+
+function benchmark_figure(rows; scenarios = SCENARIOS, subtitle = SUBTITLE)
     methods = [m for m in METHODS if any(r -> r["method"] == m[1], rows)]
     nm = length(methods)
-    fig = Figure(; size = (1250, 260 + 230 * length(METRICS)), backgroundcolor = SURFACE, fontsize = 13)
-    panels = Matrix{Axis}(undef, length(METRICS), length(SCENARIOS))
-    for (j, (sc, sctitle)) in enumerate(SCENARIOS), (i, (metric, mlabel)) in enumerate(METRICS)
+    fig = Figure(; size = (420 * length(scenarios) + 10, 260 + 230 * length(METRICS)), backgroundcolor = SURFACE, fontsize = 13)
+    panels = Matrix{Axis}(undef, length(METRICS), length(scenarios))
+    for (j, (sc, sctitle)) in enumerate(scenarios), (i, (metric, mlabel)) in enumerate(METRICS)
         ax = panels[i, j] = Axis(
             fig[i, j];
             backgroundcolor = SURFACE, xgridcolor = GRID, ygridvisible = false,
@@ -78,14 +88,13 @@ function benchmark_figure(rows)
     #the scenarios of a metric share the x-axis
     foreach(i -> linkxaxes!(panels[i, :]...), axes(panels, 1))
     Legend(
-        fig[length(METRICS) + 1, 1:length(SCENARIOS)],
-        [MarkerElement(; color = COLORS[f], marker = :circle, markersize = 10) for f in (:plnruv, :paper, :reference)],
-        ["PLNRUV.jl", "Spike-in CATE pipeline of Schivre et al. (2025)", "Reference methods (R)"];
+        fig[length(METRICS) + 1, 1:length(scenarios)],
+        [MarkerElement(; color = COLORS[f], marker = :circle, markersize = 10) for f in (:oracle, :plnruv, :paper, :reference)],
+        ["Oracles", "PLNRUV.jl", "Spike-in CATE pipeline of Schivre et al. (2025)", "Reference methods (R)"];
         orientation = :horizontal, framevisible = false, labelcolor = INK,
     )
     Label(
-        fig[0, 1:length(SCENARIOS)],
-        "Binomially thinned GTEx muscle data: 2 000 genes (200 negative controls), 20 samples; mean ± 1 SE over replicates. Dashed line: nominal 5 % FDR.";
+        fig[0, 1:length(scenarios)], subtitle;
         color = INK2, fontsize = 13,
     )
     rowgap!(fig.layout, 12)
@@ -97,3 +106,14 @@ rows = filter(r -> !(r["method"] in ARGS), read_rows(CSV))
 mkpath(OUT)
 fig = benchmark_figure(rows)
 save(joinpath(OUT, "benchmark.png"), fig; px_per_unit = 2)
+
+#misspecified controls (benchmark/grid_benchmark.jl, run_controls)
+const CTRL_CSV = joinpath(ROOT, "benchmark", "results", "gtex_controls.csv")
+if isfile(CTRL_CSV)
+    crows = filter(r -> !(r["method"] in ARGS), read_rows(CTRL_CSV))
+    cfig = benchmark_figure(
+        crows; scenarios = CTRL_SCENARIOS,
+        subtitle = "Misspecified negative controls: as the confounded and global-increase scenarios, but the 200 controls carry small effects. 20 samples; mean ± 1 SE.",
+    )
+    save(joinpath(OUT, "benchmark_controls.png"), cfig; px_per_unit = 2)
+end

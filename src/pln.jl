@@ -36,7 +36,8 @@ function pln_elbo(Y, o, M, S2, μ, σ2)
 end
 
 #M-step: fitted means μ = X B + W Γ (W orthogonal to X) and the residual variances σ²
-function pln_mstep(M, S2, QR, k, q, nfix, σ2, shrink_var, var_trend)
+#warm: the prior of the previous variance shrinkage (vash), a starting point that saves most of its search
+function pln_mstep(M, S2, QR, k, q, nfix, σ2, shrink_var, var_trend, warm = nothing)
     n, p = size(M)
     Mrot = QR.Q' * M
     Mres = Mrot[(k + 1):n, :]
@@ -58,9 +59,9 @@ function pln_mstep(M, S2, QR, k, q, nfix, σ2, shrink_var, var_trend)
     d = n - k - q - nfix
     κ = vec(mean(clamp.(1 .- S2 ./ σ2', 0.0, 1.0); dims = 1))
     σ2 = max.(vec(sum(abs2, M - μ; dims = 1) + sum(S2; dims = 1)) ./ (n .- (n - d) .* κ), 1.0e-8)
-    shrunk = shrink_variances(σ2, d, shrink_var; covariate = var_trend ? vec(mean(μ; dims = 1)) : nothing)
+    shrunk = shrink_variances(σ2, d, shrink_var; covariate = var_trend ? vec(mean(μ; dims = 1)) : nothing, warm = warm)
     B = UpperTriangular(QR.R) \ Mrot[1:k, :]
-    return μ, shrunk.s2, B, nfix > 0 ? [ones(1, p); Γ] : Γ, shrunk.df, shrunk.mix
+    return μ, shrunk.s2, B, nfix > 0 ? [ones(1, p); Γ] : Γ, shrunk.df, shrunk.mix, shrunk.warm
 end
 
 struct PLNFit
@@ -100,7 +101,7 @@ function pln(
     M = log.(Y .+ 0.5) .- o
     S2 = 1 ./ (Y .+ 1.0)
     σ2 = vec(var(M; dims = 1))
-    μ, σ2, B, Γ, df, σ2mix = pln_mstep(M, S2, QR, k, q, nfix, σ2, shrink_var, var_trend)
+    μ, σ2, B, Γ, df, σ2mix, warm = pln_mstep(M, S2, QR, k, q, nfix, σ2, shrink_var, var_trend)
     elbo = -Inf
     iter = 0
     for outer in 1:maxiter
@@ -110,7 +111,7 @@ function pln(
                 M[i, j], S2[i, j] = estep_cell(Y[i, j], o[i], μ[i, j], σ2[j], M[i, j], S2[i, j])
             end
         end
-        μ, σ2, B, Γ, df, σ2mix = pln_mstep(M, S2, QR, k, q, nfix, σ2, shrink_var, var_trend)
+        μ, σ2, B, Γ, df, σ2mix, warm = pln_mstep(M, S2, QR, k, q, nfix, σ2, shrink_var, var_trend, warm)
         elbonew = pln_elbo(Y, o, M, S2, μ, σ2)
         converged = abs(elbonew - elbo) < tol * abs(elbonew)
         elbo = elbonew

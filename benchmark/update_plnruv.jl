@@ -1,6 +1,6 @@
 #regenerate the PLNRUV rows of benchmark/results/gtex_benchmark.csv after a change of the package, keeping the rows of
 #the R methods (same simulated data: same seeds and scenarios as gtex_benchmark.jl); no RCall needed
-#run: julia -t auto --project=. benchmark/update_plnruv.jl <gtex counts file> [bayes = true]
+#run: julia -t auto --project=. benchmark/update_plnruv.jl <gtex counts file> [bayes = false]
 using PLNRUV, Random, Distributions, Statistics
 
 const SCENARIOS = [
@@ -41,7 +41,7 @@ function plnruv_methods(counts, X, controls, q; bayes = true)
     return out
 end
 
-function update_plnruv(M, file; nrep = 10, ngenes = 2_000, nctrl = 200, nsamp = 20, q = 2, seed = 1, bayes = true)
+function update_plnruv(M, file; nrep = 10, ngenes = 2_000, nctrl = 200, nsamp = 20, q = 2, seed = 1, bayes = false)
     lines = readlines(file)
     header, old = lines[1], lines[2:end]
     redo = bayes ? ("PLNRUV_",) : ("PLNRUV_EB", "PLNRUV_gaussian")
@@ -66,6 +66,6 @@ end
 if abspath(PROGRAM_FILE) == @__FILE__
     gtex = read_gct(ARGS[1])
     M = gtex.counts[filter_genes(gtex.counts; min_mean = 10), :]
-    bayes = length(ARGS) > 1 ? parse(Bool, ARGS[2]) : true
+    bayes = length(ARGS) > 1 ? parse(Bool, ARGS[2]) : false
     update_plnruv(M, joinpath(@__DIR__, "results", "gtex_benchmark.csv"); bayes = bayes)
 end

@@ -60,15 +60,34 @@ steps, in the spirit of the early-stopping alternation (ESA) of Owen & Wang (201
    freedom.
 
 **Number of factors.** [`choose_q`](@ref) chooses ``q`` by count splitting (Neufeld et al. 2024): every count is
-split by binomial thinning, ``Y^{\text{train}} \sim \text{Binomial}(Y, \varepsilon)``, ``Y^{\text{test}} = Y -
-Y^{\text{train}}``, two Poisson matrices that are independent given the latent values. The PLN model is fitted on
-``Y^{\text{train}}`` for each ``q`` and scored by the predictive log-likelihood of ``Y^{\text{test}}``, where each
-count is ``\text{Poisson}(e^{o_i + Z_{ij}})`` with a fresh ``Z_{ij} \sim \mathcal N(\mu_{ij}, \sigma_j^2)``
-(Gauss–Hermite quadrature). The two parts share the latent overdispersion, so a low-rank mean that has learned it is
-still partly rewarded; scoring the mean ``\mu`` rather than the per-cell latent values limits this optimism. On
-PLN simulations with two factors it recovers ``q = 2``. On thinned GTEx muscle it keeps adding factors up to the
-largest ``q`` tried (5–6 of 6), consistent with the residual structure left by ``q = 2``, although with 20 samples
-more factors make the error rates worse ([§8](validation.md)).
+split in two parts, the PLN model is fitted on the first for each ``q`` and scored by the predictive log-likelihood of
+the second, where each count is ``\text{Poisson}(e^{o_i + Z_{ij}})`` with a fresh ``Z_{ij} \sim \mathcal
+N(\mu_{ij}, \sigma_j^2)`` (Gauss–Hermite quadrature).
+
+Binomial thinning, ``Y^{(1)} \sim \text{Binomial}(Y, \varepsilon)``, gives two parts that are independent given the
+latent values, but they share the latent overdispersion: when it dominates the Poisson noise (counts of a few tens
+and more), a low-rank mean that has learned it is rewarded on the second part, and too many factors are chosen.
+`choose_q` therefore splits by beta-binomial thinning (data thinning, Neufeld, Dharamshi, Gao & Witten 2024),
+``Y^{(1)} \mid Y \sim \text{BetaBinomial}(Y, \varepsilon r_j, (1 - \varepsilon) r_j)``. For a count that is Poisson
+given a rate of mean ``m`` and variance ``v``,
+
+```math
+\operatorname{Cov}(Y^{(1)}, Y^{(2)}) = \varepsilon (1 - \varepsilon)\, \frac{v\, r - m^2}{r + 1},
+```
+
+which vanishes at ``r = m^2 / v = 1 / \mathrm{CV}^2``. For the lognormal rate of gene ``j`` this is ``r_j = 1 /
+(e^{\sigma_j^2} - 1)``, whatever the mean; binomial thinning is the limit ``r \to \infty``. The two parts are then
+uncorrelated (independent for a gamma rate), and an overestimated ``\sigma_j^2`` (``r_j`` too small) makes them
+negatively correlated, which can only favour fewer factors. ``\sigma_j^2`` comes from a fit at the current choice of
+``q``, starting from ``q = 0`` (whose ``\sigma_j^2`` contains the factors' variance: conservative), and the choice is
+repeated until it is stable.
+
+On PLN simulations with two factors (20 samples), binomial thinning chooses ``q = 4`` at counts around 20 and 150; the
+beta-binomial split chooses ``q = 2`` from counts of about 3 upwards, in 2–3 rounds. At counts below 1 it stays at
+``q = 0``: there the latent noise cannot be identified, and with ``q = 0`` its estimate absorbs the factors' variance,
+which errs on the conservative side. With very few samples it also prevents factors fitted to noise: with 3 samples
+per group, ``q = 2`` leaves one residual degree of freedom and an FDP of 36–41 % on PLN-exact data, against 7–13 %
+with the ``q`` chosen. Its behaviour on thinned GTEx has not been re-evaluated yet.
 
 ## 3.3 Identifying the confounders
 

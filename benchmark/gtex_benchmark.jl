@@ -13,32 +13,46 @@ function r_methods(counts, X, controls, q)
     grp = X[:, 2]
     ctrl = collect(controls)
     out = Dict{String, Tuple{Vector{Float64}, Vector{Float64}}}()
+    #each method in its own tryCatch: one failing on a small design (e.g. cate or vicar with q = 0) gives NULL
     R"""
     grp <- factor($grp)
-    dds <- DESeqDataSetFromMatrix($Yt, data.frame(grp = grp), ~ grp)
-    res <- results(DESeq(dds, quiet = TRUE), name = "grp_1_vs_0")
-    deseq <- cbind(res$log2FoldChange, res$padj)
-    dds <- estimateSizeFactors(dds, controlGenes = $ctrl)
-    res <- results(DESeq(dds, quiet = TRUE), name = "grp_1_vs_0")
-    deseq_ctrl <- cbind(res$log2FoldChange, res$padj)
-    y <- calcNormFactors(DGEList($Yt))
     design <- model.matrix(~ grp)
-    y <- estimateDisp(y, design)
-    tt <- topTags(glmQLFTest(glmQLFit(y, design)), n = Inf, sort.by = "none")$table
-    edger <- cbind(tt$logFC, tt$FDR)
-    v <- voom(y, design)
-    tt <- topTable(eBayes(lmFit(v, design)), coef = 2, n = Inf, sort.by = "none")
-    voomr <- cbind(tt$logFC, tt$adj.P.Val)
+    safe <- function(expr) tryCatch(expr, error = function(e) NULL)
+    deseq <- safe({
+        dds <- DESeqDataSetFromMatrix($Yt, data.frame(grp = grp), ~ grp)
+        res <- results(DESeq(dds, quiet = TRUE), name = "grp_1_vs_0")
+        cbind(res$log2FoldChange, res$padj)
+    })
+    deseq_ctrl <- safe({
+        dds <- estimateSizeFactors(DESeqDataSetFromMatrix($Yt, data.frame(grp = grp), ~ grp), controlGenes = $ctrl)
+        res <- results(DESeq(dds, quiet = TRUE), name = "grp_1_vs_0")
+        cbind(res$log2FoldChange, res$padj)
+    })
+    y <- estimateDisp(calcNormFactors(DGEList($Yt)), design)
+    edger <- safe({
+        tt <- topTags(glmQLFTest(glmQLFit(y, design)), n = Inf, sort.by = "none")$table
+        cbind(tt$logFC, tt$FDR)
+    })
+    voomr <- safe({
+        tt <- topTable(eBayes(lmFit(voom(y, design), design)), coef = 2, n = Inf, sort.by = "none")
+        cbind(tt$logFC, tt$adj.P.Val)
+    })
     logcpm <- t(cpm(y, log = TRUE))
-    ct <- cate(~ grp | 1, data.frame(grp = grp), Y = logcpm, r = $q, adj.method = "nc", nc = $ctrl, calibrate = FALSE)
-    cater <- cbind(as.numeric(ct$beta), p.adjust(as.numeric(ct$beta.p.value), "BH"))
-    mw <- mouthwash(Y = logcpm, X = design, k = $q, cov_of_interest = 2, include_intercept = FALSE, verbose = FALSE) #vicar defaults: normal likelihood, limma shrinkage
-    vicarr <- cbind(mw$result$PosteriorMean, mw$result$svalue)
+    cater <- safe({
+        ct <- cate(~ grp | 1, data.frame(grp = grp), Y = logcpm, r = $q, adj.method = "nc", nc = $ctrl, calibrate = FALSE)
+        cbind(as.numeric(ct$beta), p.adjust(as.numeric(ct$beta.p.value), "BH"))
+    })
+    vicarr <- safe({
+        #vicar defaults: normal likelihood, limma shrinkage
+        mw <- mouthwash(Y = logcpm, X = design, k = $q, cov_of_interest = 2, include_intercept = FALSE, verbose = FALSE)
+        cbind(mw$result$PosteriorMean, mw$result$svalue)
+    })
     """
     for (name, sym) in [
             ("DESeq2", "deseq"), ("DESeq2_controls", "deseq_ctrl"), ("edgeR", "edger"), ("limma_voom", "voomr"),
             ("cate_nc", "cater"), ("vicar_mouthwash", "vicarr"),
         ]
+        rcopy(reval("is.null($sym)")) && continue
         m = rcopy(reval(sym))
         #genes the method cannot test (NA in R: all-zero counts, outliers) get no effect and are never called
         lfc = Float64[ismissing(x) || isnan(x) ? 0.0 : x for x in m[:, 1]]
@@ -64,12 +78,16 @@ function paper_method(counts, X, controls, q)
     sf = size_factors(Yt, ctrl)
     logcts = log2.(counts .+ 0.5) .- log2.(sf)
     grp = X[:, 2]
-    R"""
-    ct <- cate::cate(~ grp | 1, data.frame(grp = factor($grp)), Y = $logcts, r = $q, fa.method = "esa",
-                     adj.method = "nc", nc = $ctrl, nc.var.correction = FALSE, calibrate = FALSE)
-    """
-    ZΓ = rcopy(R"ct$Z %*% t(ct$Gamma)")
-    corrected = round.(Int, max.(0.0, permutedims(2 .^ (logcts .- ZΓ) .* sf .- 0.5)))
+    #without factor (q = 0, very small designs) there is nothing to correct: DESeq2 with control size factors
+    corrected = Yt
+    if q > 0
+        R"""
+        ct <- cate::cate(~ grp | 1, data.frame(grp = factor($grp)), Y = $logcts, r = $q, fa.method = "esa",
+                         adj.method = "nc", nc = $ctrl, nc.var.correction = FALSE, calibrate = FALSE)
+        """
+        ZΓ = rcopy(R"ct$Z %*% t(ct$Gamma)")
+        corrected = round.(Int, max.(0.0, permutedims(2 .^ (logcts .- ZΓ) .* sf .- 0.5)))
+    end
     sfc = size_factors(corrected, ctrl)
     R"""
     dds <- DESeq2::DESeqDataSetFromMatrix($corrected, data.frame(grp = factor($grp)), ~ grp)

@@ -277,11 +277,35 @@ using PLNRUV, Aqua, Test, Random, Distributions, Statistics
         W .-= X * (X \ W)
         A = X * [randn(rng, 1, p) .+ 3; zeros(1, p)] + W * (0.5 .* randn(rng, 2, p)) + 0.3 .* randn(rng, n, p)
         Y = [rand(rng, Poisson(exp(A[i, j]))) for i in 1:n, j in 1:p]
-        c = choose_q(Y, X; qs = 0:4, nsplit = 1, rng = rng)
+        #counts around 20: the latent noise dominates the Poisson noise, binomial thinning leaves it shared by the two
+        #parts and tends to choose too many factors; the beta-binomial split also splits it
+        c = choose_q(Y, X; qs = 0:4, nsplit = 1, rng = Xoshiro(1))
         @test c.qs == 0:4
-        #known issue: the two halves share the latent overdispersion, so the criterion can favour too many factors
-        #(q = 3 here since the effective-df M-step; q = 10 of 0:10 on thinned GTEx); to be fixed
-        @test_broken c.q == 2
+        @test c.q == 2
+        @test last(c.path) == 2 && length(c.path) <= 5
+        cb = choose_q(Y, X; qs = 0:4, nsplit = 1, split = :binomial, rng = Xoshiro(1))
+        @test cb.q >= 2 && length(cb.path) == 1
+        #the beta-binomial split: uncorrelated parts at r = 1 / CV² of the latent rate
+        rng = Xoshiro(11)
+        σ2, m = 0.5, 20.0
+        r = 1 / expm1(σ2)
+        y = [rand(rng, Poisson(m * exp(sqrt(σ2) * randn(rng) - σ2 / 2))) for _ in 1:200_000]
+        y1, y2 = PLNRUV.split_counts(rng, reshape(y, :, 1), [r], 0.5)
+        @test abs(cor(vec(y1), vec(y2))) < 0.01
+        y1b, y2b = PLNRUV.split_counts(rng, reshape(y, :, 1), [Inf], 0.5)
+        @test cor(vec(y1b), vec(y2b)) > 0.5
+    end
+
+    @testset "warm-started vash" begin
+        rng = Xoshiro(13)
+        p, d = 2_000, 8
+        s2 = rand(rng, Gamma(2, 0.1), p) .* rand(rng, Chisq(d), p) ./ d
+        v0 = vash(s2, d)
+        s2b = s2 .* exp.(0.05 .* randn(rng, p)) #the variances of the next EM iteration
+        cold = vash(s2b, d)
+        warm = vash(s2b, d; warm = (c = v0.c, π = v0.π))
+        @test maximum(abs.(warm.s2 ./ cold.s2 .- 1)) < 1.0e-3
+        @test isapprox(warm.c, cold.c; rtol = 1.0e-3)
     end
 
     @testset "PLN-RUVB on low counts" begin

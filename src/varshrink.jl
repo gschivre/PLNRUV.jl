@@ -36,7 +36,7 @@ function squeeze_var(s2::AbstractVector{<:Real}, d::Real)
 end
 
 """
-    vash(s2, d; shapes = 2.0 .^ (-2:0.5:12))
+    vash(s2, d; shapes = 2.0 .^ (-2:0.5:12), warm = nothing)
 
 vash of Lu M. & Stephens M., Bioinformatics (2016): https://doi.org/10.1093/bioinformatics/btw483
 prior on the variances: mixture of inverse gammas σ²ⱼ ~ Σₖ πₖ InvGamma(aₖ, aₖ c) with a common scale c
@@ -44,8 +44,11 @@ and a grid of shapes aₖ (limma is the one-component case), so that s²ⱼ / c 
 π by mix-SQP (as in ash), c by golden-section search; return the posterior 1 / E[1 / σ²ⱼ]
 and the posterior mixture over the shapes with nonzero weight (mix: weights w, squared scales s2 and degrees of
 freedom df, genes x components), from which the exact likelihood of a moderated estimate is a mixture of t
+warm = (c, π) of a previous fit on similar variances (successive EM iterations) starts mix-SQP from π and finds log c
+by successive parabolic interpolation from the previous log c (the golden-section search on the full bracket when
+the parabola is not concave or moves too far): the same optimum in a few evaluations instead of about 25
 """
-function vash(s2::AbstractVector{<:Real}, d::Real; shapes = 2.0 .^ (-2:0.5:12))
+function vash(s2::AbstractVector{<:Real}, d::Real; shapes = 2.0 .^ (-2:0.5:12), warm = nothing)
     p = length(s2)
     K = length(shapes)
     Lik = zeros(p, K)
@@ -56,7 +59,8 @@ function vash(s2::AbstractVector{<:Real}, d::Real; shapes = 2.0 .^ (-2:0.5:12))
     d2 = 2 .* shapes
     const_k = (d / 2) .* log.(d ./ d2) .- logbeta.(d / 2, d2 ./ 2)
     logs2 = log.(s2)
-    πwarm = fill(1 / K, K) #warm start across the evaluations of the search
+    #warm start of mix-SQP across the evaluations of the search (and from a previous fit)
+    πwarm = warm === nothing || length(warm.π) != K ? fill(1 / K, K) : max.(collect(float.(warm.π)), 1.0e-6) ./ sum(max.(warm.π, 1.0e-6))
     function fit_weights(logc)
         c = exp(logc)
         for j in 1:p
@@ -76,22 +80,48 @@ function vash(s2::AbstractVector{<:Real}, d::Real; shapes = 2.0 .^ (-2:0.5:12))
         return π, obj
     end
     #golden-section search of the common scale between the 1% and 99% quantiles of the sample variances
-    g = (sqrt(5) - 1) / 2
-    a, b = log.(quantile(s2, [0.01, 0.99]))
-    x1, x2 = b - g * (b - a), a + g * (b - a)
-    f1, f2 = fit_weights(x1)[2], fit_weights(x2)[2]
-    while b - a > 1.0e-4
-        if f1 > f2
-            b, x2, f2 = x2, x1, f1
-            x1 = b - g * (b - a)
-            f1 = fit_weights(x1)[2]
-        else
-            a, x1, f1 = x1, x2, f2
-            x2 = a + g * (b - a)
-            f2 = fit_weights(x2)[2]
+    function golden(a, b)
+        g = (sqrt(5) - 1) / 2
+        x1, x2 = b - g * (b - a), a + g * (b - a)
+        f1, f2 = fit_weights(x1)[2], fit_weights(x2)[2]
+        while b - a > 1.0e-4
+            if f1 > f2
+                b, x2, f2 = x2, x1, f1
+                x1 = b - g * (b - a)
+                f1 = fit_weights(x1)[2]
+            else
+                a, x1, f1 = x1, x2, f2
+                x2 = a + g * (b - a)
+                f2 = fit_weights(x2)[2]
+            end
         end
+        return (a + b) / 2
     end
-    logc = (a + b) / 2
+    #from a previous scale: successive parabolic interpolation through three points around it (a few evaluations
+    #near the optimum of a smooth objective); nothing when the parabola is not concave or jumps far
+    function parabolic(x0; h = 0.05, maxit = 10)
+        xs = [x0 - h, x0, x0 + h]
+        fs = [fit_weights(x)[2] for x in xs]
+        for _ in 1:maxit
+            x1, x2, x3 = xs
+            f1, f2, f3 = fs
+            den = (x1 - x2) * (x1 - x3) * (x2 - x3)
+            A = (x3 * (f2 - f1) + x2 * (f1 - f3) + x1 * (f3 - f2)) / den
+            A >= 0 && return nothing
+            B = (x3^2 * (f1 - f2) + x2^2 * (f3 - f1) + x1^2 * (f2 - f3)) / den
+            xv = -B / (2A)
+            abs(xv - x0) > 1 && return nothing
+            best = xs[argmax(fs)]
+            #tight: in an EM loop, a looser stop makes the shrunk variances jitter above its tolerance
+            abs(xv - best) < 1.0e-7 && return xv
+            worst = argmin(fs)
+            xs[worst], fs[worst] = xv, fit_weights(xv)[2]
+        end
+        return xs[argmax(fs)]
+    end
+    lo, hi = log.(quantile(s2, [0.01, 0.99]))
+    x = warm === nothing ? nothing : parabolic(log(warm.c))
+    logc = x === nothing ? golden(lo, hi) : x
     π, _ = fit_weights(logc)
     c = exp(logc)
     #posterior of the precisions: Σₖ wⱼₖ Gamma(aₖ + d / 2, rate aₖ c + d s²ⱼ / 2)
@@ -131,19 +161,25 @@ function variance_trend(s2::AbstractVector{<:Real}, x::AbstractVector{<:Real})
 end
 
 #dispatch on the shrinkage method (:vash, :limma or :none): the shrunk variances, their degrees of freedom and the
-#posterior mixture (one component for limma and none, the active shapes for vash)
+#posterior mixture (one component for limma and none, the active shapes for vash), and for vash its prior (c, π) as
+#warm start of the next call (warm, nothing for the other methods)
 #with a covariate the variances are shrunk around their trend in it: method applied to s² / trend, then rescaled
 #(an exchangeable prior pulls the overdispersions of low-count genes down and those of high-count genes up)
-function shrink_variances(s2::AbstractVector{<:Real}, d::Real, method::Symbol; covariate = nothing)
-    single(s2, df) = (s2 = s2, df = df, mix = (w = ones(length(s2), 1), s2 = reshape(s2, :, 1), df = reshape(df, :, 1)))
+function shrink_variances(s2::AbstractVector{<:Real}, d::Real, method::Symbol; covariate = nothing, warm = nothing)
+    single(s2, df) = (
+        s2 = s2, df = df, mix = (w = ones(length(s2), 1), s2 = reshape(s2, :, 1), df = reshape(df, :, 1)), warm = nothing,
+    )
     method === :none && return single(collect(float.(s2)), fill(float(d), length(s2)))
     t = covariate === nothing ? ones(length(s2)) : variance_trend(s2, covariate)
     if method === :limma
         lim = squeeze_var(s2 ./ t, d)
         return single(lim.s2 .* t, lim.df)
     elseif method === :vash
-        va = vash(s2 ./ t, d)
-        return (s2 = va.s2 .* t, df = va.df, mix = (w = va.mix.w, s2 = va.mix.s2 .* t, df = va.mix.df))
+        va = vash(s2 ./ t, d; warm = warm)
+        return (
+            s2 = va.s2 .* t, df = va.df, mix = (w = va.mix.w, s2 = va.mix.s2 .* t, df = va.mix.df),
+            warm = (c = va.c, π = va.π),
+        )
     end
     throw(ArgumentError("unknown variance shrinkage method $method (use :vash, :limma or :none)"))
 end
