@@ -2,7 +2,7 @@
     PLNRUV
 
 Poisson-lognormal differential expression with confounder adjustment, combining CATE of Wang J. et al.,
-Ann. Stat. (2017): https://doi.org/10.1214/16-AOS1511 and the RUVB / MOUTHWASH generalisations of
+Ann. Stat. (2017): https://doi.org/10.1214/16-AOS1511 and the MOUTHWASH generalisation of
 Gerard D. & Stephens M. The compositional offset of sequencing data is a latent factor with loadings fixed to one.
 """
 module PLNRUV
@@ -12,22 +12,18 @@ using Distributions, LinearAlgebra, Random, SpecialFunctions, Statistics
 export read_gct, filter_genes
 export surrogate_factors, assign_groups, thin_counts, thin_2group
 export log_ratio
-export ruvb, summarize, lfsr, rhat, ess
 export ash, mouthwash, factor_analysis, evalues, ebh
-export pln, pln_mouthwash, pln_ruvb, choose_q
+export pln, pln_mouthwash, choose_q
 export squeeze_var, vash
 
 include("io.jl")
 include("simulation.jl")
 include("transforms.jl")
 include("rotation.jl")
-include("diagnostics.jl")
-include("ruvb.jl")
 include("ash.jl")
 include("varshrink.jl")
 include("mouthwash.jl")
 include("pln.jl")
-include("plnruvb.jl")
 include("countsplit.jl")
 include("show.jl")
 

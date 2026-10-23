@@ -53,25 +53,6 @@ using PLNRUV, Aqua, Test, Random, Distributions, Statistics
         @test Z ≈ log.([2 4 8; 1 3 5]) .- log.([sqrt(8), sqrt(3)])
     end
 
-    @testset "RUVB with confounders and a compositional shift" begin
-        rng = Xoshiro(3)
-        n, p, c = 40, 200, 50
-        X = [ones(n) repeat([0.0, 1.0], n ÷ 2)]
-        β = [zeros(c); (rand(rng, p - c) .< 0.3) .* randn(rng, p - c) .* 1.5]
-        Z = X * [0.0 0.0; 1.2 -0.8] + randn(rng, n, 2)
-        Y = X * [randn(rng, 1, p); β'] + Z * randn(rng, 2, p) + 0.3 .* randn(rng, n, p)
-        Y .+= X[:, 2] .+ 0.3 .* randn(rng, n) #per-sample offset correlated with the group
-        fit = ruvb(Y, X, 1:c, 2; burnin = 500, nsample = 100, thin = 5, nchain = 2, rng = Xoshiro(4))
-        s = summarize(fit)
-        nc = (c + 1):p
-        @test size(fit.β) == (1, p, 100, 2)
-        @test all(isnan, s.mean[1, 1:c])
-        @test cor(s.mean[1, nc], β[nc]) > 0.9
-        @test abs(mean(s.mean[1, nc] - β[nc])) < 0.1
-        @test mean(s.lower[1, nc] .<= β[nc] .<= s.upper[1, nc]) > 0.85
-        @test all(0 .<= s.lfsr[1, nc] .<= 0.5)
-    end
-
     @testset "ash" begin
         rng = Xoshiro(5)
         p = 2_000
@@ -308,47 +289,12 @@ using PLNRUV, Aqua, Test, Random, Distributions, Statistics
         @test isapprox(warm.c, cold.c; rtol = 1.0e-3)
     end
 
-    @testset "PLN-RUVB on low counts" begin
-        rng = Xoshiro(9)
-        n, p, c = 30, 300, 60
-        X = [ones(n) repeat([0.0, 1.0], n ÷ 2)]
-        β = [zeros(c); (rand(rng, p - c) .< 0.3) .* randn(rng, p - c) .* 1.5]
-        σ = sqrt.(rand(rng, Gamma(4, 0.05), p))
-        A = X * [randn(rng, 1, p) .* 1.5; β'] + randn(rng, n, p) .* σ' .+ X[:, 2]
-        o = log(2.0) .+ 0.4 .* randn(rng, n)
-        Y = [rand(rng, Poisson(exp(o[i] + A[i, j]))) for i in 1:n, j in 1:p]
-        out = pln_ruvb(Y, X, 1:c, 1; burnin = 300, nsample = 100, thin = 2, nchain = 2, rng = Xoshiro(10))
-        s = summarize(out)
-        nc = (c + 1):p
-        @test all(0.8 .< out.acceptance .< 1)
-        @test all(isnan, s.mean[1, 1:c])
-        @test mean(s.lower[1, nc] .<= β[nc] .<= s.upper[1, nc]) > 0.85
-        @test cor(s.ash_mean[1, nc], β[nc]) > 0.85
-        disc = nc[s.ash_svalue[1, nc] .< 0.05]
-        @test length(disc) > 30 && mean(β[disc] .== 0) < 0.1
-    end
-
-    @testset "convergence diagnostics and display" begin
+    @testset "display" begin
         rng = Xoshiro(11)
-        iid = randn(rng, 1_000, 4)
-        @test abs(rhat(iid) - 1) < 0.01
-        @test 3_000 < ess(iid) < 5_000
-        stuck = randn(rng, 1_000, 4) .+ [0 0 3 3]
-        @test rhat(stuck) > 1.5
-        ar = zeros(1_000, 4) #AR(1) with ρ = 0.9: ESS ≈ N (1 - ρ) / (1 + ρ)
-        for c in 1:4, t in 2:1_000
-            ar[t, c] = 0.9 * ar[t - 1, c] + randn(rng)
-        end
-        @test 100 < ess(ar) < 400
-        #display of both branches
         n, p, c = 30, 200, 40
         X = [ones(n) repeat([0.0, 1.0], n ÷ 2)]
         β = [zeros(c); (rand(rng, p - c) .< 0.3) .* randn(rng, p - c) .* 1.5]
         Y = [rand(rng, Poisson(exp(log(5.0) + X[i, 2] * β[j] + 0.3 * randn(rng)))) for i in 1:n, j in 1:p]
-        fit = pln_ruvb(Y, X, 1:c, 1; burnin = 100, nsample = 50, thin = 1, nchain = 2, rng = Xoshiro(12))
-        txt = sprint(show, MIME"text/plain"(), fit)
-        @test occursin("Convergence", txt) && occursin("acceptance", txt) && occursin("Top 10 genes", txt)
-        @test occursin("RUVBFit(200 genes", sprint(show, fit))
         mw = pln_mouthwash(Y, X, 1; controls = 1:c).mouthwash
         txt = sprint(show, MIME"text/plain"(), mw)
         @test occursin("Confounders", txt) && occursin("Discoveries", txt)

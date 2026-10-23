@@ -20,7 +20,7 @@ MOUTHWASH. And it shows that the compositional offset is just one more latent fa
 shifts every gene of a sample by the same amount. Negative control genes, or the assumption that most genes do not
 change, identify all of these factors at once.
 
-## The story in six steps
+## The story in five steps
 
 1. [**The problem**](problem.md). Counts, compositions, and confounders. Why the change of a gene is not identified
    from the reads alone, and what restores it.
@@ -34,8 +34,6 @@ change, identify all of these factors at once.
    confounders and the variances are all estimated from the data. No prior to choose.
 5. [**Fitting the Poisson-lognormal layer**](pln.md). A variational EM whose E-step has a closed form (Lambert W),
    and whose M-step is the Gaussian machinery of step 3.
-6. [**The fully Bayesian branch**](bayes.md). RUVB: a Gibbs sampler that treats the effects as missing data and
-   propagates every source of uncertainty.
 
 Then: [**simulating data by binomial thinning**](simulation.md), [**validation**](validation.md),
 [**assumptions and limits**](limits.md), [notation and references](notation.md), and the [API](api.md).
@@ -75,10 +73,4 @@ res.svalue   # s-value: declare the genes with svalue < 0.05 to control the fals
 
 # without control genes, the sparsity of the effects identifies the confounders
 fit_free = pln_mouthwash(sim.counts, sim.X, 2)
-
-# fully Bayesian branch: Gibbs sampler on the latent PLN layer, then ash on the posterior
-out = pln_ruvb(sim.counts, sim.X, sim.controls, 2)
-post = summarize(out)
-post.lower, post.upper       # credible intervals (flat prior on the effects)
-post.ash_mean, post.ash_svalue   # shrunk estimates and s-values, to declare discoveries
 ```

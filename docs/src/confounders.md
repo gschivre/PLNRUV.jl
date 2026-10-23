@@ -112,7 +112,7 @@ al. 2022) or ANCOM-BC, but estimated jointly with the other confounders.
 A free factor could, in principle, learn loadings close to one. But its loadings are estimated from the residual
 rows, where the compositional shift may be weak or absent: the shift correlated with the design lives in the row of
 interest. With the loadings fixed, nothing has to be learned, and the shift is captured exactly. On simulations with
-a shift correlated with the group ([§8.3](validation.md)), a free extra factor leaves an RMSE of 0.15–0.26 and a false
+a shift correlated with the group ([§7.2](validation.md)), a free extra factor leaves an RMSE of 0.15–0.26 and a false
 discovery proportion of 6–15 %; the fixed offset factor gives 0.10–0.12 and 3–7 %.
 
 ## Functions

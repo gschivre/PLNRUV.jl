@@ -161,7 +161,7 @@ variance is ``\tilde s_j^2 = 1 / \mathbb E[\sigma_j^{-2} \mid s_j^2]``, a mixtur
 Both are available everywhere a variance is estimated (`shrink_var = :vash`, `:limma` or `:none`): in the Gaussian
 MOUTHWASH, and inside each M-step of the PLN fit, where the shrunk overdispersions also stabilise the E-step of
 low-count genes. vash is the default. On bimodal variances it beats limma, and on the low-count PLN simulations of
-[§8.4](validation.md) it gives the best-calibrated false sign rate.
+[§7.3](validation.md) it gives the best-calibrated false sign rate.
 
 Both priors are exchangeable: every variance is pulled toward the same scale. RNA-seq overdispersions are not
 exchangeable, they decrease with expression (the mean–dispersion trend that DESeq2 and edgeR fit). On thinned GTEx

@@ -86,7 +86,7 @@ s_j = \frac{1}{\lvert R_{22}\rvert}\sqrt{\sum_i q_i^2\, v_{ij}} .
 
 Then ``\hat{\tilde\beta}_j``, ``s_j`` and the PLN loadings ``\Gamma`` go into MOUTHWASH ([§4.2](empirical_bayes.md)).
 Without confounding, this standard error needs no inflation (``\hat\lambda \approx 1``) and 95 % intervals cover
-95–96 % of the true effects ([§8.4](validation.md)).
+95–96 % of the true effects ([§7.3](validation.md)).
 
 ## Functions
 

@@ -140,5 +140,5 @@ other confounders.
 
 This is the idea of the package. A latent factor with loadings fixed to one (the *offset factor*) is added to the
 hidden factors. Controls or sparsity then identify the compositional shift and the confounders at once, with the
-same machinery. [§3](confounders.md) explains how, and [§8](validation.md) shows what happens when the offset factor
+same machinery. [§3](confounders.md) explains how, and [§7](validation.md) shows what happens when the offset factor
 is left out.

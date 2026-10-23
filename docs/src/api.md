@@ -16,7 +16,7 @@ assign_groups
 log_ratio
 ```
 
-## Empirical Bayes branch
+## Empirical Bayes
 
 ```@docs
 pln_mouthwash
@@ -25,15 +25,9 @@ mouthwash
 factor_analysis
 choose_q
 ash
+evalues
+ebh
 squeeze_var
 vash
 ```
 
-## Fully Bayesian branch
-
-```@docs
-pln_ruvb
-ruvb
-summarize
-lfsr
-```

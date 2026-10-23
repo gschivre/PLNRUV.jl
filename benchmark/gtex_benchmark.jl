@@ -126,23 +126,14 @@ function run_extra(M, method; nrep = 10, ngenes = 2_000, nctrl = 200, nsamp = 20
 end
 
 #PLNRUV methods: log2 fold changes and s-values
-function julia_methods(counts, X, controls, q; bayes = true)
+function julia_methods(counts, X, controls, q)
     out = Dict{String, Tuple{Vector{Float64}, Vector{Float64}}}()
-    p = size(counts, 2)
     eb = pln_mouthwash(counts, X, q; controls = controls).mouthwash
     out["PLNRUV_EB_controls"] = (eb.mean ./ log(2), eb.svalue)
     ebf = pln_mouthwash(counts, X, q).mouthwash
     out["PLNRUV_EB_sparsity"] = (ebf.mean ./ log(2), ebf.svalue)
     g = mouthwash(log_ratio(counts, controls), X, q; controls = controls)
     out["PLNRUV_gaussian_logratio"] = (g.mean ./ log(2), g.svalue)
-    if bayes
-        s = summarize(pln_ruvb(counts, X, controls, q; burnin = 1_000, nsample = 250, thin = 4))
-        m, sv = zeros(p), ones(p)
-        est = setdiff(1:p, controls)
-        m[est] .= s.ash_mean[1, est] ./ log(2)
-        sv[est] .= s.ash_svalue[1, est]
-        out["PLNRUV_bayes"] = (m, sv)
-    end
     return out
 end
 
@@ -163,7 +154,7 @@ const SCENARIOS = [
     (name = "global_increase", prop_null = 0.4, signal = Normal(1.0, 0.5), target_cor = [0.6, 0.2]),
 ]
 
-function run_benchmark(M; nrep = 10, ngenes = 2_000, nctrl = 200, nsamp = 20, q = 2, seed = 1, bayes = true, outfile = nothing)
+function run_benchmark(M; nrep = 10, ngenes = 2_000, nctrl = 200, nsamp = 20, q = 2, seed = 1, outfile = nothing)
     rows = []
     for sc in SCENARIOS, r in 1:nrep
         rng = Xoshiro(seed + r)
@@ -172,7 +163,7 @@ function run_benchmark(M; nrep = 10, ngenes = 2_000, nctrl = 200, nsamp = 20, q 
             signal = sc.signal, target_cor = sc.target_cor
         )
         idx = setdiff(1:ngenes, sim.controls)
-        res = merge(r_methods(sim.counts, sim.X, sim.controls, q), julia_methods(sim.counts, sim.X, sim.controls, q; bayes = bayes))
+        res = merge(r_methods(sim.counts, sim.X, sim.controls, q), julia_methods(sim.counts, sim.X, sim.controls, q))
         for (method, (lfc, qv)) in res
             push!(rows, (scenario = sc.name, rep = r, method = method, metrics(lfc, qv, sim.β, idx)...))
         end

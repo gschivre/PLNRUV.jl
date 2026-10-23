@@ -43,7 +43,7 @@ for large counts. Zeros need no special treatment and no pseudo-count.
     noise all add up on the same log scale, so the latent layer is an ordinary Gaussian factor model, and every
     method for confounders (CATE, RUV, MOUTHWASH) applies to it. And it is closed under binomial thinning: thinning
     a Poisson(``\lambda``) count with probability ``\pi`` gives a Poisson(``\pi\lambda``) count. The simulations of
-    [§7](simulation.md), which thin real counts, therefore stay exactly inside the model.
+    [§6](simulation.md), which thin real counts, therefore stay exactly inside the model.
 
 ## 2.2 The confounders and the offset factor
 
@@ -75,20 +75,15 @@ With either assumption, ``\alpha`` and therefore every ``\beta_j`` are identifie
 shift. The two options use the same code: a control gene is a gene whose prior is the point mass at zero
 ([§4.2](empirical_bayes.md)).
 
-## 2.4 Two ways to fit it
+## 2.4 How it is fitted
 
-The package offers two branches, which share the model and differ in how they handle uncertainty:
-
-| | empirical Bayes ([§4](empirical_bayes.md), [§5](pln.md)) | fully Bayesian ([§6](bayes.md)) |
-|---|---|---|
-| counts | PLN, variational EM | PLN, Gibbs sampler with Metropolis–Hastings latent updates |
-| confounders ``\alpha``, loadings ``\Gamma`` | point estimates | integrated out by MCMC |
-| prior on the effects | estimated from the data (ash) | flat (RUVB), then ash on the posterior |
-| variances | shrunk across genes (vash or limma) | half-``t`` prior, sampled |
-| output | posterior mean, lfsr, s-value | full posterior samples |
-
-The empirical Bayes branch is fast and has no prior to choose. The fully Bayesian branch propagates the uncertainty
-of the confounders, which matters when the factors are hard to estimate (few samples, low counts).
+The model is fitted by empirical Bayes: a variational EM for the PLN layer ([§5](pln.md)), then MOUTHWASH, which
+estimates the confounders together with an adaptive prior on the effects and shrinks the variances across genes
+([§4](empirical_bayes.md)). The confounders ``\alpha`` and loadings ``\Gamma`` are point estimates; the uncertainty of
+``\alpha`` and the misfit of the variances enter the standard errors ([§4.2](empirical_bayes.md)). There is no prior to
+choose, and a fit takes seconds. A fully Bayesian version, a Gibbs sampler that integrates over ``\alpha`` and
+``\Gamma``, is kept on the `fully-bayesian` branch of the repository until the cause of its miscalibration on real
+data is understood.
 
 ## Functions
 

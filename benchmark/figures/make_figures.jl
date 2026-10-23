@@ -7,8 +7,7 @@ const ROOT = joinpath(@__DIR__, "..", "..")
 const CSV = joinpath(ROOT, "benchmark", "results", "gtex_benchmark.csv")
 const OUT = joinpath(ROOT, "docs", "src", "figures")
 
-#display names, in plotting order (top to bottom), and their family; the fully Bayesian branch (PLNRUV_bayes rows,
-#still in the CSV) is left out until its miscalibration is understood
+#display names, in plotting order (top to bottom), and their family
 const METHODS = [
     ("oracle_prior", "Oracle: + true effect prior", :oracle),
     ("oracle_design", "Oracle: known confounders + normalisation", :oracle),

@@ -25,7 +25,6 @@ makedocs(;
             "Separating the confounders" => "confounders.md",
             "Empirical Bayes" => "empirical_bayes.md",
             "Fitting the PLN layer" => "pln.md",
-            "The fully Bayesian branch" => "bayes.md",
         ],
         "Simulating by binomial thinning" => "simulation.md",
         "Validation" => "validation.md",

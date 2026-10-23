@@ -140,7 +140,7 @@ function grid_methods(sim, sc, q)
     out = Dict{String, Tuple{Vector{Float64}, Vector{Float64}}}()
     merge!(out, safely(r_methods, c, X, ctrl, q))
     merge!(out, safely(paper_method, c, X, ctrl, q))
-    merge!(out, safely((c, X, ctrl, q) -> julia_methods(c, X, ctrl, q; bayes = false), c, X, ctrl, q))
+    merge!(out, safely(julia_methods, c, X, ctrl, q))
     merge!(out, safely(oracle_methods, sim, sc))
     return out
 end
@@ -215,7 +215,7 @@ const CTRL_SCENARIOS = [
 const MAIN_SCENARIOS = [merge(sc, (ctrl = Dirac(0.0),)) for sc in SCENARIOS]
 
 #20-sample benchmark on a list of scenarios (MAIN_SCENARIOS: gtex_benchmark.csv; CTRL_SCENARIOS: gtex_controls.csv),
-#all methods but the fully Bayesian branch; same seeds as gtex_benchmark.jl, so a misspecified-control data set
+#all methods; same seeds as gtex_benchmark.jl, so a misspecified-control data set
 #differs from its exact-control twin only by the control effects; rows in the format of gtex_benchmark.csv, appended
 #after each data set (an interrupted run resumes)
 function run_scenarios(M, scenarios, file; nrep = 10, ngenes = 2_000, nctrl = 200, nsamp = 20, q = 2, seed = 1)

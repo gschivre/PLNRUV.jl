@@ -1,11 +1,11 @@
-# 7. Simulating data by binomial thinning
+# 6. Simulating data by binomial thinning
 
 A method for real data should be tested on data that look real: with the real correlations between genes, the real
 overdispersion, the real zeros and the real hidden factors. Parametric simulations get all of these wrong in some way.
 Binomial thinning (Gerard 2020) starts from a real count matrix, here GTEx skeletal muscle (803 samples), and adds
 known effects to it.
 
-## 7.1 Thinning adds an effect exactly
+## 6.1 Thinning adds an effect exactly
 
 Take a gene in a set of real samples, and a log fold change ``\beta_j`` (in log2 units) between two groups. Keep each
 read of sample ``i`` independently with probability
@@ -25,14 +25,14 @@ Thinning the differentially expressed genes reduces the library sizes of the sam
 is the compositional effect of [§1.4](problem.md), created naturally: the simulated data are compositional in the
 same way as real data.
 
-## 7.2 Negative controls and the truth
+## 6.2 Negative controls and the truth
 
 A set of ``n_c`` genes is drawn as negative controls, with ``\beta_j = 0`` exactly. They can also be made
 approximately null (`ctrl_signal = Normal(0, 0.1)`), to test robustness. Among the other genes, a proportion
 `prop_null` is null, and the effects of the rest are drawn from `signal`. Because thinning acts on the expected
 counts, the true effect relative to the controls is ``\beta_j`` itself.
 
-## 7.3 Confounding: groups correlated with hidden factors
+## 6.3 Confounding: groups correlated with hidden factors
 
 In real data the group is often correlated with hidden factors. To reproduce this, the groups are not assigned at
 random:

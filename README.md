@@ -22,13 +22,13 @@ own bias. PLNRUV.jl treats both problems with one model:
 3. **The compositional offset as one more factor**, whose loadings are fixed to one: a shift common to all genes of a
    sample. Controls or sparsity estimate it together with the other confounders.
 
-Two branches share the model:
+The model is fitted by empirical Bayes (`pln_mouthwash`): a variational PLN fit, then MOUTHWASH with an ash prior on
+the effects and vash/limma shrinkage of the variances. There is no prior to choose. It reports posterior means, local
+false sign rates and s-values. `choose_q` chooses the number of latent factors by count splitting.
 
-- an **empirical Bayes** branch (`pln_mouthwash`): variational PLN fit, then MOUTHWASH with an ash prior on the
-  effects and vash/limma shrinkage of the variances. There is no prior to choose. It reports posterior means, local
-  false sign rates and s-values;
-- a **fully Bayesian** branch (`pln_ruvb`): a Gibbs sampler on the latent PLN layer that treats the effects as missing
-  data and propagates the uncertainty of the confounders (`ruvb` does the same on a Gaussian scale).
+A fully Bayesian version (a Gibbs sampler on the latent PLN layer that propagates the uncertainty of the confounders)
+is kept on the [`fully-bayesian`](https://github.com/gschivre/PLNRUV.jl/tree/fully-bayesian) branch, until the cause of
+its miscalibration on real data is understood.
 
 The package is pure Julia. Comparisons with R packages live in the separate `benchmark/` environment.
 
@@ -94,8 +94,7 @@ The manual explains the method step by step, from the biology to the equations. 
 
 - [the problem](docs/src/problem.md): global transcription changes, compositions and confounders;
 - [the model](docs/src/model.md), [separating the confounders](docs/src/confounders.md),
-  [empirical Bayes](docs/src/empirical_bayes.md), [fitting the PLN layer](docs/src/pln.md) and
-  [the fully Bayesian branch](docs/src/bayes.md);
+  [empirical Bayes](docs/src/empirical_bayes.md) and [fitting the PLN layer](docs/src/pln.md);
 - [simulation by binomial thinning](docs/src/simulation.md) and [validation](docs/src/validation.md);
 - [assumptions and limits](docs/src/limits.md).
 
@@ -114,8 +113,9 @@ the author's direction:
 - the review of the earlier scripts and the development plan;
 - the formulation of the compositional offset as a latent factor with loadings fixed to one, and the latent-scale
   standard errors of the PLN branch;
-- the implementation of the package (simulation, RUVB sampler, ash with mix-SQP, MOUTHWASH, variance shrinkage,
-  variational PLN), its tests, its cross-checks against seqgendiff and vicar, and the manual.
+- the implementation of the package (simulation, RUVB sampler, now on the `fully-bayesian` branch, ash with
+  mix-SQP, MOUTHWASH, variance shrinkage, variational PLN), its tests, its cross-checks against seqgendiff and vicar,
+  and the manual.
 
 The author chose the questions and the modelling directions, and is responsible for the package and for its use in
 publications.
