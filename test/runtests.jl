@@ -275,6 +275,18 @@ using PLNRUV, Aqua, Test, Random, Distributions, Statistics
         @test abs(cor(vec(y1), vec(y2))) < 0.01
         y1b, y2b = PLNRUV.split_counts(rng, reshape(y, :, 1), [Inf], 0.5)
         @test cor(vec(y1b), vec(y2b)) > 0.5
+        #3 samples per group and genes that are on in some samples and off in others: some fits with factors diverge
+        #on the split, those q are rejected instead of stopping the choice
+        rng = Xoshiro(1)
+        n, p = 6, 1_000
+        X = [ones(n) repeat([0.0, 1.0], n ÷ 2)]
+        W = randn(rng, n, 2)
+        W .-= X * (X \ W)
+        A = X * [randn(rng, 1, p) .* 0.5 .+ 4; zeros(1, p)] + W * (0.5 .* randn(rng, 2, p)) + 0.3 .* randn(rng, n, p)
+        A[:, 1:20] .= 3 .+ 4 .* randn(rng, n, 20)
+        Y = [rand(rng, Poisson(exp(A[i, j]))) for i in 1:n, j in 1:p]
+        c = choose_q(Y, X; qs = 0:2, nsplit = 1, rng = Xoshiro(1))
+        @test c.q in 0:2
     end
 
     @testset "warm-started vash" begin

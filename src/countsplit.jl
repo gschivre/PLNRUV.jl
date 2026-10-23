@@ -54,6 +54,9 @@ rⱼ = 1 / (exp(σⱼ²) - 1), which splits the latent noise as well as the Pois
 binomial thinning), the model is fitted on the first part for each q in qs and scored by the predictive
 log-likelihood of the second part (averaged over nsplit splits); σⱼ² comes from a fit at the current choice, from
 q = 0, repeated until the choice is stable (at most maxrounds); kwargs are passed to pln
+a q whose fit on the first part fails (with one or two residual degrees of freedom a gene that is zero in some samples
+of that part lets a loading diverge) gets the score -Inf: the data do not support it, and the choice falls back
+towards q = 0, which has no loadings
 return the chosen q, the scores of each q (last round) and the choices of the successive rounds
 """
 function choose_q(
@@ -75,8 +78,14 @@ function choose_q(
             otr = vec(log.(sum(Ytr; dims = 2)))
             ote = vec(log.(sum(Yte; dims = 2)))
             for (l, q) in enumerate(qs)
-                fit = pln(Ytr, X, q; offsets = otr, offset_factor = offset_factor, kwargs...)
-                score[l] += pln_predictive(Yte, ote, fit.μ, fit.σ2) / nsplit
+                s = try
+                    fit = pln(Ytr, X, q; offsets = otr, offset_factor = offset_factor, kwargs...)
+                    all(isfinite, fit.μ) && all(isfinite, fit.σ2) ? pln_predictive(Yte, ote, fit.μ, fit.σ2) : -Inf
+                catch err
+                    err isa InterruptException && rethrow()
+                    -Inf
+                end
+                score[l] += isfinite(s) ? s / nsplit : -Inf
             end
         end
         return score
@@ -87,7 +96,17 @@ function choose_q(
     end
     q, score, path = first(qs), Float64[], Int[]
     for _ in 1:maxrounds
-        pilot = pln(Y, X, q; offset_factor = offset_factor, kwargs...)
+        #the σⱼ² of the split from a fit at the current choice; if that fit fails, the previous choice is kept
+        pilot = try
+            pln(Y, X, q; offset_factor = offset_factor, kwargs...)
+        catch err
+            err isa InterruptException && rethrow()
+            nothing
+        end
+        if pilot === nothing || !all(isfinite, pilot.σ2)
+            q = length(path) >= 2 ? path[end - 1] : first(qs)
+            break
+        end
         score = scores(1 ./ expm1.(pilot.σ2))
         qnew = qs[argmax(score)]
         push!(path, qnew)

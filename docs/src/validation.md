@@ -5,9 +5,8 @@ The R packages are used only for these checks, in the separate `benchmark/` envi
 Julia. Unless stated otherwise, "FDP" is the false discovery proportion among the genes declared at s-value < 0.05,
 counting both null genes and wrong signs as errors.
 
-!!! note "Status"
-    These checks validate each component on simulations. The full benchmark on thinned GTEx data, against DESeq2,
-    edgeR, limma-voom, CATE, RUVB/MOUTHWASH (vicar) and PLNmodels, is the next step.
+Sections 7.1–7.3 check each component on simulations; section 7.4 benchmarks the whole method against standard
+pipelines on real counts.
 
 ## 7.1 The simulator
 
@@ -57,3 +56,44 @@ Counts simulated from the PLN model: 30 samples, 1 500 genes, 150 controls, two 
 **Remaining miscalibration of the empirical Bayes branch.** With confounding and low counts, the FDP is still slightly
 above the nominal level. It comes from the estimation of the confounders (the Gaussian pipeline shows the same
 excess), not from the PLN layer.
+
+## 7.4 Benchmark on thinned GTEx data
+
+Two-group experiments are simulated from GTEx v8 skeletal muscle by binomial thinning ([§6](simulation.md)): 2 000
+genes, 200 negative controls, 20 samples, 10 replicates per scenario. *Balanced*: 20 % of the genes change, log₂ fold
+changes ``\sim \mathcal N(0, 0.8)``, random groups. *Confounded*: the same effects, groups correlated with two hidden
+factors of the samples (0.6 and 0.2). *Global increase*: 60 % of the genes go up, log₂ fold changes ``\sim \mathcal
+N(1, 0.5)``, confounded. Two oracles give a reference: PLN with the confounding factors and the true normalisation
+known, and the same with the true effect distribution in place of the fitted ash prior.
+
+![Benchmark on thinned GTEx muscle data](figures/benchmark.png)
+
+| scenario | PLNRUV EB (controls) | PLNRUV EB (sparsity) | oracle | DESeq2 | edgeR | limma-voom | vicar | spike-in CATE + DESeq2 |
+|---|---|---|---|---|---|---|---|---|
+| balanced | 4.5 % / 0.33 | 4.3 % / 0.32 | 5.0 % / 0.33 | 10.5 % / 0.31 | 5.0 % / 0.26 | 2.3 % / 0.25 | 9.6 % / 0.37 | 16.7 % / 0.42 |
+| confounded | 4.8 % / 0.23 | 3.4 % / 0.22 | 4.4 % / 0.22 | 45.4 % / 0.40 | 36.5 % / 0.34 | 29.7 % / 0.32 | 6.6 % / 0.26 | 41.7 % / 0.45 |
+| global increase | 5.1 % / 0.73 | 46.2 % / 0.45 | 4.5 % / 0.72 | 43.8 % / 0.41 | 39.9 % / 0.40 | 38.6 % / 0.40 | 43.3 % / 0.57 | 11.8 % / 0.73 |
+
+FDP / power at level 0.05 (s-values for PLNRUV and vicar, BH-adjusted p-values otherwise), means over 10 replicates.
+PLNRUV with controls is calibrated in all three scenarios and has the power of the oracles: with 20 samples,
+estimating the confounders, the offset and the prior costs almost nothing. Without controls (sparsity), it is
+calibrated when most genes do not change, and fails, as it must, when most genes go up
+([§1.4](problem.md)). The standard pipelines are calibrated only without confounding; the higher power of CATE and of
+the spike-in pipeline comes with an FDP of 12–42 %.
+
+**Misspecified controls.** The same confounded and global scenarios, but the 200 controls carry small effects:
+*noisy* controls, log₂ fold change ``\sim \mathcal N(0, 0.2)`` each, or *biased* controls, which shift together,
+``\sim \mathcal N(0.15, 0.05)``, as a spike-in whose amount follows the condition.
+
+![Benchmark with misspecified controls](figures/benchmark_controls.png)
+
+Noisy controls are averaged out: PLNRUV with controls stays calibrated (2.6 % confounded, 4.1 % global). Biased
+controls are a different matter. In the confounded scenario every control-based method fails, PLNRUV included (FDP
+54 %; DESeq2 with control size factors 56 %, the spike-in pipeline 53 %), because a shared shift of the controls moves
+the estimate of the offset, and with it every gene; the sparsity branch is not affected (4.8 %). In the global
+scenario PLNRUV with controls stays calibrated (1.4 %), with less power (0.56 against 0.69). Controls that move with
+the condition, even slightly, are the main threat to a control-based analysis ([§8](limits.md)).
+
+With few samples the picture changes: with 2–3 samples per group, the inference has only 1–2 residual degrees of
+freedom per gene and every method, the oracles included, has an excess of false discoveries ([§8](limits.md)).
+

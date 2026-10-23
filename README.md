@@ -1,6 +1,6 @@
 # PLNRUV.jl
 
-[![Docs](https://img.shields.io/badge/docs-manual-blue.svg)](docs/src/index.md)
+[![Docs](https://img.shields.io/badge/docs-dev-blue.svg)](https://gschivre.github.io/PLNRUV.jl/dev/)
 [![CI](https://github.com/gschivre/PLNRUV.jl/actions/workflows/CI.yml/badge.svg)](https://github.com/gschivre/PLNRUV.jl/actions/workflows/CI.yml)
 [![Aqua QA](https://raw.githubusercontent.com/JuliaTesting/Aqua.jl/master/badge.svg)](https://github.com/JuliaTesting/Aqua.jl)
 [![Code Style: Runic](https://img.shields.io/badge/code_style-%E1%9A%B1%E1%9A%A2%E1%9A%BE%E1%9B%81%E1%9A%B2-black)](https://github.com/fredrikekre/Runic.jl)
@@ -52,8 +52,13 @@ The full references are in [the manual](docs/src/notation.md).
 
 ## Status
 
-Early development. The components are validated on simulations, but not yet benchmarked on real data. The interface
-may change.
+Version 0.1, under development; the interface may change. The components are validated on simulations, and the whole
+method is benchmarked on two-group experiments built from GTEx skeletal muscle counts by binomial thinning, against
+DESeq2, edgeR, limma-voom, CATE, MOUTHWASH (vicar) and a spike-in CATE pipeline
+([validation](docs/src/validation.md)). With 20 samples and negative controls, PLNRUV is calibrated in balanced,
+confounded and global-increase designs, with the power of an oracle that knows the confounders. Known limits: with
+2–3 samples per group the false discovery rate is not controlled, and controls that shift with the condition bias
+the estimates ([assumptions and limits](docs/src/limits.md)).
 
 ## Installation
 

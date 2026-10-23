@@ -80,7 +80,10 @@ which vanishes at ``r = m^2 / v = 1 / \mathrm{CV}^2``. For the lognormal rate of
 uncorrelated (independent for a gamma rate), and an overestimated ``\sigma_j^2`` (``r_j`` too small) makes them
 negatively correlated, which can only favour fewer factors. ``\sigma_j^2`` comes from a fit at the current choice of
 ``q``, starting from ``q = 0`` (whose ``\sigma_j^2`` contains the factors' variance: conservative), and the choice is
-repeated until it is stable.
+repeated until it is stable. With one or two residual degrees of freedom, a fit with factors can diverge on a split
+(a gene whose training part is zero in some samples lets a loading push those cells towards ``-\infty``); such a
+``q`` is rejected, the data on half the counts not supporting it, so the choice falls back towards ``q = 0``, which
+has no loadings and cannot diverge. Priors on the loadings, the planned fix, would remove the divergence itself.
 
 On PLN simulations with two factors (20 samples), binomial thinning chooses ``q = 4`` at counts around 20 and 150; the
 beta-binomial split chooses ``q = 2`` from counts of about 3 upwards, in 2–3 rounds. At counts below 1 it stays at
