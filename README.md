@@ -32,6 +32,24 @@ Two branches share the model:
 
 The package is pure Julia. Comparisons with R packages live in the separate `benchmark/` environment.
 
+## Novelty
+
+Most of the statistical tools in the package are already published, and the package reimplements them:
+
+- the Poisson-lognormal model (Aitchison & Ho 1989) and its variational fit (Chiquet et al. 2018);
+- confounder adjustment by rotation (CATE, Wang et al. 2017), negative controls (RUV-4, Gagnon-Bartsch et al. 2013),
+  RUVB and MOUTHWASH (Gerard & Stephens 2020, 2021);
+- adaptive shrinkage of the effects (ash, Stephens 2017) fitted by mix-SQP (Kim et al. 2020), and shrinkage of the
+  variances (limma, Smyth 2004; vash, Lu & Stephens 2016);
+- simulation by binomial thinning (Gerard 2020) and count splitting (Neufeld et al. 2024).
+
+The novelty is the **compositional framework**. Confounder adjustment is applied to sequencing counts while treating
+them as compositions: the change in total transcript abundance between conditions is a hidden factor, estimated
+together with the confounders, rather than an assumption built into the normalisation. The author developed this idea
+during his PhD thesis, after observing that light-grown cotyledons of *Arabidopsis thaliana* roughly double their
+transcriptional activity (Schivre et al. 2025, *Nat. Commun.* 16, 11228), a change that standard normalisation hides.
+The full references are in [the manual](docs/src/notation.md).
+
 ## Status
 
 Early development. The components are validated on simulations, but not yet benchmarked on real data. The interface
