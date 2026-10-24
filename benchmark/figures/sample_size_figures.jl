@@ -1,9 +1,8 @@
-#figure of the benchmark by number of samples per group (benchmark/results/grid_benchmark.csv): FDP and power, one
-#column per scenario, all methods; by default the scenarios whose confounding is set exactly (balanced, confounded,
-#global increase) at 5 and 10 samples per group: with 2 or 3 per group a target confounding is reached only on
-#selected sets of samples
+#figure of the benchmark by number of samples per group (benchmark/results/grid_benchmark.csv): FDP, power and RMSE,
+#one column per scenario, all methods, effect sd 0.8; random groups at 2 to 10 samples per group, the scenarios with a
+#target confounding from 5 per group (with 2 or 3 a target is met only on selected sets of samples)
 #run: julia --project=benchmark/figures benchmark/figures/sample_size_figures.jl [output directory]
-#writes sample_size.png (default: docs/src/figures)
+#writes sample_size.png and strong_signal.png (default: docs/src/figures)
 using CairoMakie, Statistics
 
 const SROOT = joinpath(@__DIR__, "..", "..")
@@ -14,8 +13,7 @@ const SMETHODS = [
     ("PLNRUV_EB_controls", "PLNRUV (controls)", "#2a78d6", :solid, :circle),
     ("PLNRUV_EB_sparsity", "PLNRUV (sparsity)", "#2a78d6", :dash, :circle),
     ("PLNRUV_gaussian_logratio", "PLNRUV Gaussian log-ratios", "#2a78d6", :dot, :diamond),
-    ("PLNRUV_EB_controls_chooseq", "PLNRUV (controls), q by choose_q", "#2a78d6", nothing, :star5),
-    ("oracle_design", "Oracle: known factors + normalisation", "#0b0b0b", :solid, :rect),
+    ("oracle_design", "Oracle: true normalisation", "#0b0b0b", :solid, :rect),
     ("oracle_prior", "Oracle: + true effect prior", "#0b0b0b", :dash, :rect),
     ("DESeq2", "DESeq2", "#eb6834", :solid, :utriangle),
     ("DESeq2_controls", "DESeq2 (control size factors)", "#eb6834", :dash, :utriangle),
@@ -49,13 +47,21 @@ function scurve(rows, sc, s, m, metric)
     return out
 end
 
-function sample_size_figure(rows, s, ns; title, scenarios = SSCEN)
-    fig = Figure(size = (350 * length(scenarios) + 100, 760), fontsize = 14)
-    for (j, (sc, slabel)) in enumerate(scenarios), (i, (metric, mlabel)) in enumerate((("fdp", "FDP"), ("power", "Power")))
+#FDP, power and RMSE against the number of samples per group, one column per scenario; each scenario is shown at the
+#sizes where it exists (a target confounding is met without selecting samples only from 5 per group)
+const FIGCOLS = [
+    ("randomised", "Random groups"), ("balanced", "Balanced"), ("confounded", "Confounded"),
+    ("global_randomised", "Global increase,\nrandom groups"), ("global_increase", "Global increase,\nconfounded"),
+]
+
+function sample_size_figure(rows, s; columns = FIGCOLS, ns = [2, 3, 5, 10], title)
+    fig = Figure(size = (300 * length(columns) + 120, 1020), fontsize = 14)
+    metrics_ = (("fdp", "FDP"), ("power", "Power"), ("rmse", "RMSE of log₂FC"))
+    for (j, (sc, slabel)) in enumerate(columns), (i, (metric, mlabel)) in enumerate(metrics_)
         ax = Axis(
-            fig[i, j]; title = i == 1 ? slabel : "", xlabel = i == 2 ? "Samples per group" : "", ylabel = j == 1 ? mlabel : "",
-            xscale = log2, xticks = (ns, string.(ns)), xgridcolor = (:gray, 0.15), ygridcolor = (:gray, 0.15),
-            limits = ((minimum(ns) / 1.15, maximum(ns) * 1.15), metric == "fdp" ? (0, nothing) : (0, nothing))
+            fig[i, j]; title = i == 1 ? slabel : "", xlabel = i == length(metrics_) ? "Samples per group" : "",
+            ylabel = j == 1 ? mlabel : "", xscale = log2, xticks = (ns, string.(ns)), xgridcolor = (:gray, 0.15),
+            ygridcolor = (:gray, 0.15), limits = ((minimum(ns) / 1.15, maximum(ns) * 1.15), (0, nothing))
         )
         metric == "fdp" && hlines!(ax, [0.05]; color = (:gray, 0.6), linestyle = :dot, linewidth = 1)
         for (key, label, col, ls, mk) in SMETHODS
@@ -63,33 +69,26 @@ function sample_size_figure(rows, s, ns; title, scenarios = SSCEN)
             isempty(c) && continue
             xs, ms, ses = first.(c), getindex.(c, 2), getindex.(c, 3)
             errorbars!(ax, xs, ms, ses; color = (col, 0.5), whiskerwidth = 4)
-            if ls === nothing
-                scatter!(ax, xs, ms; color = col, marker = mk, markersize = 14, strokecolor = :white, strokewidth = 1)
-            else
-                scatterlines!(ax, xs, ms; color = col, linestyle = ls, linewidth = 2, marker = mk, markersize = 9)
-            end
+            scatterlines!(ax, xs, ms; color = col, linestyle = ls, linewidth = 2, marker = mk, markersize = 9)
         end
     end
-    elems = [
-        ls === nothing ? MarkerElement(color = c, marker = mk, markersize = 14) :
-            [LineElement(color = c, linestyle = ls, linewidth = 2), MarkerElement(color = c, marker = mk, markersize = 9)]
-            for (_, _, c, ls, mk) in SMETHODS
-    ]
-    Legend(fig[3, 1:length(scenarios)], elems, [l for (_, l, _, _, _) in SMETHODS]; orientation = :horizontal, nbanks = 5, framevisible = false)
-    Label(fig[0, 1:length(scenarios)], title; fontsize = 16)
+    elems = [[LineElement(color = c, linestyle = ls, linewidth = 2), MarkerElement(color = c, marker = mk, markersize = 9)] for (_, _, c, ls, mk) in SMETHODS]
+    Legend(fig[length(metrics_) + 1, 1:length(columns)], elems, [l for (_, l, _, _, _) in SMETHODS]; orientation = :horizontal, nbanks = length(columns) >= 4 ? 3 : 6, framevisible = false)
+    Label(fig[0, 1:length(columns)], title; fontsize = 16)
     return fig
 end
 
 function sample_size_figures(out = joinpath(SROOT, "docs", "src", "figures"))
     rows = srows(SCSV)
     f = sample_size_figure(
-        rows, 0.8, [5, 10]; scenarios = SSCEN[2:end],
-        title = "FDP and power at 0.05 (s-value or adjusted p-value), mean ± s.e. over 10 data sets; dotted line: 0.05"
+        rows, 0.8; title = "Effect sd 0.8: FDP and power at 0.05 (s-value or adjusted p-value), RMSE of the log₂ fold changes; mean ± s.e. over the data sets; dotted line: 0.05"
     )
     save(joinpath(out, "sample_size.png"), f; px_per_unit = 2)
-    return f
-end
-
-if abspath(PROGRAM_FILE) == @__FILE__
-    sample_size_figures(isempty(ARGS) ? joinpath(SROOT, "docs", "src", "figures") : ARGS[1])
+    #stronger effects with 2 and 3 samples per group, where the effects of sd 0.8 are mostly too small to be found
+    f2 = sample_size_figure(
+        rows, 1.6; columns = [FIGCOLS[1], FIGCOLS[4]], ns = [2, 3],
+        title = "Effect sd 1.6, 2 and 3 samples per group: FDP, power and RMSE; mean ± s.e. over the data sets"
+    )
+    save(joinpath(out, "strong_signal.png"), f2; px_per_unit = 2)
+    return f, f2
 end

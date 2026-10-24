@@ -4,8 +4,6 @@
 #run from the benchmark environment: julia -t auto --project=benchmark benchmark/update_plnruv.jl <gtex counts file>
 include(joinpath(@__DIR__, "grid_benchmark.jl"))
 
-is_julia_method(m) = startswith(m, "PLNRUV_") || startswith(m, "oracle_")
-
 #the surrogate variables of a saved data set, recomputed from its genes and samples (deterministic): data sets saved
 #before thin_2group returned them for every scenario lack them for random groups
 function saved_factors(M, saved)
@@ -41,8 +39,9 @@ function refresh_scenarios(M, scenarios, file; nrep = 10, ngenes = 2_000, nctrl 
             logline("refresh $key: the simulation from its seed differs from the saved data set (the saved one is used)")
         end
         res = Dict(m => (v.lfc, v.q) for (m, v) in saved.methods if !is_julia_method(m))
-        merge!(res, safely(julia_methods, sim.counts, sim.X, sim.controls, q))
-        merge!(res, safely(oracle_methods, sim, sc))
+        qpln = pln_q(sim.counts, sim.X, r)
+        merge!(res, safely(julia_methods, sim.counts, sim.X, sim.controls, qpln))
+        merge!(res, safely(oracle_methods, sim, sc, qpln))
         idx = setdiff(1:ngenes, sim.controls)
         meancount = vec(mean(sim.counts; dims = 1))
         for (method, (lfc, qv)) in sort(collect(res); by = first)
@@ -60,16 +59,24 @@ end
 
 #the Julia rows (PLNRUV and the oracles) of the grid, on its saved data sets (results/grid_benchmark_datasets): the
 #previous Julia rows are dropped and recomputed, the R rows kept; one data set at a time, appended
-function refresh_grid(M, file = joinpath(@__DIR__, "results", "grid_benchmark.csv"))
+#keep(name) selects the data sets to refresh by file name (the others keep their R rows only)
+function refresh_grid(M, file = joinpath(@__DIR__, "results", "grid_benchmark.csv"); keep = f -> true)
     dir = replace(file, ".csv" => "_datasets")
     cfile = replace(file, ".csv" => "_curves.csv")
-    keep(l) = !is_julia_method(split(l, ",")[6])
+    #the Julia rows of the data sets to refresh are dropped, the others kept
+    pat = r"^(.*)_n(\d+)_s([\d.]+)_r(\d+)\.jls$"
+    todo = Set(begin
+        m = match(pat, f)
+        (m[1], m[2], string(parse(Float64, m[3])), m[4])
+    end for f in readdir(dir) if endswith(f, ".jls") && keep(f))
+    stale(l, mcol) = (x = split(l, ","); is_julia_method(x[mcol]) && (x[1], x[2], string(parse(Float64, x[3])), x[4]) in todo)
     lines, clines = readlines(file), readlines(cfile)
-    write(file, join([lines[1]; filter(keep, lines[2:end])], "\n") * "\n")
-    write(cfile, join([clines[1]; filter(l -> !is_julia_method(split(l, ",")[5]), clines[2:end])], "\n") * "\n")
+    write(file, join([lines[1]; filter(l -> !stale(l, 6), lines[2:end])], "\n") * "\n")
+    write(cfile, join([clines[1]; filter(l -> !stale(l, 5), clines[2:end])], "\n") * "\n")
     scs = Dict((sc.name, s) => sc for s in SIGNAL for sc in grid_scenarios(s))
     for f in sort(readdir(dir))
         STOP[] && return nothing
+        keep(f) || continue
         m = match(r"^(.*)_n(\d+)_s([\d.]+)_r(\d+)\.jls$", f)
         name, g, s, r = m[1], parse(Int, m[2]), parse(Float64, m[3]), parse(Int, m[4])
         saved = deserialize(joinpath(dir, f))
@@ -79,63 +86,23 @@ function refresh_grid(M, file = joinpath(@__DIR__, "results", "grid_benchmark.cs
             realized_cor = saved.realized_cor, tries = saved.tries, redraws = saved.redraws,
         )
         sc = scs[(name, s)]
-        q = nfactors(2g)
+        qpln = pln_q(sim.counts, sim.X, r)
         res = Dict(k => (v.lfc, v.q) for (k, v) in saved.methods if !is_julia_method(k))
-        merge!(res, safely(julia_methods, sim.counts, sim.X, sim.controls, q))
-        merge!(res, safely(oracle_methods, sim, sc))
+        merge!(res, safely(julia_methods, sim.counts, sim.X, sim.controls, qpln))
+        merge!(res, safely(oracle_methods, sim, sc, qpln))
         idx = setdiff(1:length(sim.β), sim.controls)
         meancount = vec(mean(sim.counts; dims = 1))
         rows, crows = String[], String[]
         for (method, (lfc, qv)) in res
             is_julia_method(method) || continue
             x = metrics(lfc, qv, sim.β, idx)
-            push!(rows, join((name, g, s, r, q, method, x.ndisc, x.fdp, x.power, x.rmse), ","))
+            push!(rows, join((name, g, s, r, qpln, method, x.ndisc, x.fdp, x.power, x.rmse), ","))
             append!(crows, curve_rows(join((name, g, s, r, method), ","), lfc, qv, sim.β, meancount, idx))
         end
         open(io -> foreach(l -> println(io, l), rows), file, "a")
         open(io -> foreach(l -> println(io, l), crows), cfile, "a")
         save_dataset(dir, replace(f, ".jls" => ""), sim, res)
         logline("refresh grid $f")
-    end
-    return nothing
-end
-
-#PLNRUV with q chosen by choose_q (binomial split) on a subset of the saved grid data sets: rows
-#PLNRUV_EB_controls_chooseq and PLNRUV_EB_sparsity_chooseq, with the chosen q in the q column; run after refresh_grid
-#(which drops all Julia rows)
-function chooseq_grid(
-        file = joinpath(@__DIR__, "results", "grid_benchmark.csv"); npergroup = [5, 10],
-        scenarios = ["randomised", "confounded"], signal = 0.8, nrep = 10
-    )
-    dir = replace(file, ".csv" => "_datasets")
-    cfile = replace(file, ".csv" => "_curves.csv")
-    for g in npergroup, name in scenarios, r in 1:nrep
-        STOP[] && return nothing
-        key = "$(name)_n$(g)_s$(signal)_r$(r)"
-        path = joinpath(dir, key * ".jls")
-        isfile(path) || continue
-        saved = deserialize(path)
-        t = @elapsed begin
-            c = choose_q(saved.counts, saved.X; qs = 0:min(5, 2g - 4), rng = Xoshiro(r))
-            fits = Dict(
-                "PLNRUV_EB_controls_chooseq" => pln_mouthwash(saved.counts, saved.X, c.q; controls = saved.controls).mouthwash,
-                "PLNRUV_EB_sparsity_chooseq" => pln_mouthwash(saved.counts, saved.X, c.q).mouthwash,
-            )
-        end
-        idx = setdiff(1:length(saved.β), saved.controls)
-        rows, crows = String[], String[]
-        methods = Dict(saved.methods)
-        for (m, mw) in fits
-            lfc, qv = mw.mean ./ log(2), mw.svalue
-            x = metrics(lfc, qv, saved.β, idx)
-            push!(rows, join((name, g, signal, r, c.q, m, x.ndisc, x.fdp, x.power, x.rmse), ","))
-            append!(crows, curve_rows(join((name, g, signal, r, m), ","), lfc, qv, saved.β, saved.meancount, idx))
-            methods[m] = (lfc = lfc, q = qv)
-        end
-        open(io -> foreach(l -> println(io, l), rows), file, "a")
-        open(io -> foreach(l -> println(io, l), crows), cfile, "a")
-        serialize(path, merge(saved, (methods = methods,)))
-        logline("choose_q grid $key: q = $(c.q) (bound $(c.qmax)), $(round(t; digits = 0)) s")
     end
     return nothing
 end

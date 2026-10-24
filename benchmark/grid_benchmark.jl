@@ -108,7 +108,14 @@ grid_scenarios(s) = [
     (name = "balanced", prop_null = 0.8, signal = Normal(0.0, s), target_cor = [0.0, 0.0]),
     (name = "confounded", prop_null = 0.8, signal = Normal(0.0, s), target_cor = [0.6, 0.2]),
     (name = "global_increase", prop_null = 0.4, signal = Normal(1.25s, 0.625s), target_cor = [0.6, 0.2]),
+    (name = "global_randomised", prop_null = 0.4, signal = Normal(1.25s, 0.625s), target_cor = Float64[]),
 ]
+
+#PLNRUV and the oracles use the number of factors chosen by choose_q (one seed per replicate); the R methods use the
+#fixed nfactors(n)
+pln_q(counts, X, r) = choose_q(counts, X; qs = 0:5, rng = Xoshiro(r)).q
+
+is_julia_method(m) = startswith(m, "PLNRUV_") || startswith(m, "oracle_")
 
 #latent factors that the residual degrees of freedom allow: the compositional offset takes one of the n - 2
 nfactors(n) = clamp(n - 4, 0, 2)
@@ -127,23 +134,16 @@ end
 #DESeq2 median-of-ratios size factors on the truly null genes (untouched by the thinning): the oracle normalisation
 oracle_offsets(counts, nulls) = log.(size_factors(permutedims(counts), nulls))
 
-#oracle_design: PLN with the surrogate factors used to confound the group as covariates and the oracle normalisation
-#(no compositional offset to estimate); latent factors still absorb the other hidden structure of the real samples,
-#and the controls let the effect prior find the mode of a global change; oracle_prior: the same estimates with the
-#true effect prior in place of the fitted ash prior
-function oracle_methods(sim, sc)
-    n = size(sim.counts, 1)
-    #the two surrogate variables that define the scenarios, in every scenario: with random groups their chance
-    #correlation with the group is confounding too
-    U = sim.factors[:, 1:min(2, size(sim.factors, 2))]
-    X = Float64[ones(n) U sim.X[:, 2]]
-    #no oracle when the design leaves fewer than 2 residual degrees of freedom for the variances
-    n - size(X, 2) < 2 && return Dict{String, Tuple{Vector{Float64}, Vector{Float64}}}()
-    q = max(0, min(2, n - size(X, 2) - 2))
+#oracle_design: PLNRUV with the true normalisation (DESeq2 size factors on the truly null genes, no compositional
+#offset to estimate) and its own latent factors, q as PLNRUV (choose_q); the surrogate variables of the scenarios are
+#not given as covariates: they are principal components of the same samples, and with few samples regressing on them
+#leaves the quietest directions to estimate the variances (anti-conservative); oracle_prior: the same estimates with
+#the true effect prior in place of the fitted ash prior
+function oracle_methods(sim, sc, q)
     #only the null genes: the controls are untouched only when they are exact
-    nulls = sim.null
     fit = pln_mouthwash(
-        sim.counts, X, q; controls = sim.controls, offsets = oracle_offsets(sim.counts, nulls), offset_factor = false
+        sim.counts, float.(sim.X), q; controls = sim.controls, offsets = oracle_offsets(sim.counts, sim.null),
+        offset_factor = false
     )
     mw = fit.mouthwash
     out = Dict("oracle_design" => (mw.mean ./ log(2), mw.svalue))
@@ -176,26 +176,27 @@ end
 #set R_ONLY[] = true to run only the R methods (the PLNRUV and oracle rows are added later on the saved data sets)
 const R_ONLY = Ref(false)
 
-function grid_methods(sim, sc, q)
+function grid_methods(sim, sc, q, qpln)
     c, X, ctrl = sim.counts, sim.X, sim.controls
     out = Dict{String, Tuple{Vector{Float64}, Vector{Float64}}}()
     merge!(out, safely(r_methods, c, X, ctrl, q))
     merge!(out, safely(paper_method, c, X, ctrl, q))
     R_ONLY[] && return out
-    merge!(out, safely(julia_methods, c, X, ctrl, q))
-    merge!(out, safely(oracle_methods, sim, sc))
+    merge!(out, safely(julia_methods, c, X, ctrl, qpln))
+    merge!(out, safely(oracle_methods, sim, sc, qpln))
     return out
 end
 
 function run_grid(
         M; nrep = 10, ngenes = 2_000, nctrl = 200, seed = 1, outfile = nothing, done = Set{Tuple}(),
-        npergroup = NPERGROUP, signals = SIGNAL
+        npergroup = NPERGROUP, signals = SIGNAL, scenarios = nothing
     )
     header = "scenario,npergroup,signal,rep,q,method,ndisc,fdp,power,rmse"
     if outfile !== nothing && !isfile(outfile)
         write(outfile, header * "\n")
     end
     for g in npergroup, s in signals, sc in grid_scenarios(s), r in 1:nrep
+        scenarios === nothing || sc.name in scenarios || continue
         (sc.name, g, s, r) in done && continue
         STOP[] && return nothing
         #the same seeds across signal strengths and scenarios: the same samples and genes, only the effects differ
@@ -206,13 +207,14 @@ function run_grid(
             continue
         end
         q = nfactors(2g)
+        qpln = R_ONLY[] ? q : pln_q(sim.counts, sim.X, r)
         idx = setdiff(1:ngenes, sim.controls)
-        res = grid_methods(sim, sc, q)
+        res = grid_methods(sim, sc, q, qpln)
         meancount = vec(mean(sim.counts; dims = 1))
         rows, crows = String[], String[]
         for (method, (lfc, qv)) in res
             x = metrics(lfc, qv, sim.β, idx)
-            push!(rows, join((sc.name, g, s, r, q, method, x.ndisc, x.fdp, x.power, x.rmse), ","))
+            push!(rows, join((sc.name, g, s, r, is_julia_method(method) ? qpln : q, method, x.ndisc, x.fdp, x.power, x.rmse), ","))
             append!(crows, curve_rows(join((sc.name, g, s, r, method), ","), lfc, qv, sim.β, meancount, idx))
         end
         #appended after each data set, so an interrupted run can resume (pass the finished cells as done)
@@ -226,27 +228,6 @@ function run_grid(
         logline("grid $(sc.name) n/group = $g signal = $s rep $r")
     end
     return nothing
-end
-
-#oracle rows of the 20-sample benchmark (gtex_benchmark.csv): same seeds and scenarios as run_benchmark, previous
-#oracle rows replaced
-function oracle_rows(M, file; nrep = 10, ngenes = 2_000, nctrl = 200, nsamp = 20, seed = 1)
-    lines = readlines(file)
-    kept = filter(l -> !startswith(split(l, ",")[3], "oracle_"), lines[2:end])
-    rows = String[]
-    for sc in SCENARIOS, r in 1:nrep
-        sim = thin_2group(
-            Xoshiro(seed + r), M; ngenes = ngenes, nsamp = nsamp, nctrl = nctrl, prop_null = sc.prop_null,
-            signal = sc.signal, target_cor = sc.target_cor
-        )
-        idx = setdiff(1:ngenes, sim.controls)
-        for (method, (lfc, qv)) in oracle_methods(sim, sc)
-            x = metrics(lfc, qv, sim.β, idx)
-            push!(rows, join((sc.name, r, method, x.ndisc, x.fdp, x.power, x.rmse), ","))
-        end
-    end
-    write(file, join([lines[1]; kept; rows], "\n") * "\n")
-    return rows
 end
 
 #misspecified negative controls, 20 samples: noisy (each control has a small effect of its own) or biased (the
@@ -278,7 +259,7 @@ function run_scenarios(M, scenarios, file; nrep = 10, ngenes = 2_000, nctrl = 20
             continue
         end
         idx = setdiff(1:ngenes, sim.controls)
-        res = grid_methods(sim, sc, q)
+        res = grid_methods(sim, sc, q, R_ONLY[] ? q : pln_q(sim.counts, sim.X, r))
         meancount = vec(mean(sim.counts; dims = 1))
         rows, crows = String[], String[]
         for (method, (lfc, qv)) in res

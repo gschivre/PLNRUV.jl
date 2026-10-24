@@ -10,7 +10,7 @@ const OUT = joinpath(ROOT, "docs", "src", "figures")
 #display names, in plotting order (top to bottom), and their family
 const METHODS = [
     ("oracle_prior", "Oracle: + true effect prior", :oracle),
-    ("oracle_design", "Oracle: known confounders + normalisation", :oracle),
+    ("oracle_design", "Oracle: true normalisation", :oracle),
     ("PLNRUV_EB_controls", "PLNRUV EB (controls)", :plnruv),
     ("PLNRUV_EB_sparsity", "PLNRUV EB (sparsity)", :plnruv),
     ("PLNRUV_gaussian_logratio", "PLNRUV Gaussian log-ratios", :plnruv),
