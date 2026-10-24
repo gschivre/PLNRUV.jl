@@ -13,7 +13,7 @@
 | a global change multiplies all genes equally | [§1.5](problem.md) | a change that favours some genes | read the gene effects as relative to the common part |
 | one contrast at a time | [§5.6](pln.md) | a question about several coefficients at once ("any change over time") | test the contrasts one by one |
 | every coefficient estimable | [§5.6](pln.md) | a gene with no count in a group, level or time point | it is reported as not tested |
-| confounders are plugged in | [§4.3](empirical_bayes.md) | weak factors, very few samples; loadings plugged in by the Gaussian branch | see §8.4 |
+| confounders are plugged in | [§4.3](empirical_bayes.md) | weak factors, very few samples; loadings plugged in by the Gaussian log-ratio branch ([§5.7](pln.md)) | see §8.4 and §8.5 |
 
 ## 8.2 What the reads cannot tell
 

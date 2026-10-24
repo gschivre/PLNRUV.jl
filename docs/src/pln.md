@@ -165,7 +165,8 @@ not: look at these genes directly.
 
 [`log_ratio`](@ref) followed by the Gaussian [`mouthwash`](@ref) is a lighter alternative. The counts are turned into
 log-ratios, ``\log(y_{ij} + 0.5)`` minus the mean over a set of reference genes (all genes, or the controls), and
-analysed as Gaussian data: rotation, factor analysis, variance shrinkage by vash or limma, and MOUTHWASH. The offset
+analysed as Gaussian data: rotation, factor analysis, variance shrinkage by vash or limma around the same trend in
+expression as the PLN fit (§5.4), and MOUTHWASH. The offset
 factor plays the same role as in the PLN fit.
 
 It is fast and works well when counts are high. Its limits:
@@ -174,8 +175,7 @@ It is fast and works well when counts are high. Its limits:
   gene with 3 reads is treated as precisely as one with 3 000.
 - **Fixed loadings.** The factor analysis gives point estimates of the loadings. Their uncertainty (§5.5) is not
   passed to MOUTHWASH, so confounded designs with few samples can be slightly anti-conservative.
-- **A common variance scale.** The variance trend is off by default (`var_trend = false`), and when on it is a cubic in
-  the mean, not the local fit of §5.4.
+- **One column at a time.** It tests a column of the design (`cov_of_interest`), not a contrast (§5.6).
 
 ## Functions
 

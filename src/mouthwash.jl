@@ -218,17 +218,18 @@ function noise_model(likelihood::Symbol, s2, df, mixw, mixv, mixdf)
 end
 
 """
-    mouthwash(Y, X, q; controls = Int[], cov_of_interest = size(X, 2), offset_factor = true, nullweight = 10, estimate_λ = true, shrink_var = :vash, var_trend = false, likelihood = :t, mode = :auto)
+    mouthwash(Y, X, q; controls = Int[], cov_of_interest = size(X, 2), offset_factor = true, nullweight = 10, estimate_λ = true, shrink_var = :vash, var_trend = true, likelihood = :t, mode = :auto)
 
 MOUTHWASH on Gaussian data Y (samples x genes) with design X and q latent factors
 controls are optional negative controls; one covariate of interest (default the last column of X)
-with var_trend = true the variances are shrunk around their trend in the mean of each column of Y
+the variances are shrunk around their trend in the mean of each column of Y (the local fit of plnpca's variance
+prior; var_trend = false for a single scale)
 """
 function mouthwash(
         Y::AbstractMatrix{<:Real}, X::AbstractMatrix{<:Real}, q::Integer;
         controls::AbstractVector{<:Integer} = Int[], cov_of_interest::Integer = size(X, 2),
         offset_factor::Bool = true, nullweight::Real = 10, estimate_λ::Bool = true, shrink_var::Symbol = :vash,
-        alpha_uncertainty::Bool = true, likelihood::Symbol = :t, var_trend::Bool = false, mode::Symbol = :auto,
+        alpha_uncertainty::Bool = true, likelihood::Symbol = :t, var_trend::Bool = true, mode::Symbol = :auto,
         mode_threshold::Real = 0.05
     )
     rot = rotate(Y, X, [cov_of_interest])

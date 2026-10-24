@@ -135,4 +135,5 @@ comparison is in [§7.2](validation.md).
 
 - [`factor_analysis`](@ref): factor analysis with the optional offset factor.
 - [`choose_q`](@ref): the number of factors by count splitting.
-- [`mouthwash`](@ref): rotation, factor analysis and the estimation of [§4](empirical_bayes.md), on Gaussian data.
+- [`mouthwash`](@ref): rotation, factor analysis and the estimation of [§4](empirical_bayes.md), on Gaussian data
+  (the log-ratio branch, [§5.7](pln.md)).

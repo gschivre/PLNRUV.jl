@@ -119,20 +119,14 @@ function vash(s2::AbstractVector{<:Real}, d::Real; shapes = 2.0 .^ (-2:0.5:12))
 end
 
 """
-    variance_trend(s2, x)
+    variance_trend(s2, x; span = 0.2)
 
-trend of the variances in a covariate x (e.g. the mean log-abundance of each gene, as in limma-trend):
-a cubic polynomial fitted to log s² by least squares, evaluated at x clamped to its 1% and 99% quantiles
-(no extrapolation of the cubic in the tails); return the trend on the variance scale
-the constant bias of E[log s²] is not removed, it is absorbed by the scale of the prior (s₀² or c)
+trend of the variances in a covariate x (the mean log-abundance of each gene, as in limma-trend): the same local fit
+as the variance prior of plnpca (variance_scale_trend), here the local-linear likelihood of s² ~ σ² χ²_d / d over the
+fraction span of the genes nearest in x, held flat beyond the 1 % and 99 % quantiles of x; returns the trend on the
+variance scale
 """
-function variance_trend(s2::AbstractVector{<:Real}, x::AbstractVector{<:Real})
-    lo, hi = quantile(x, [0.01, 0.99])
-    xc = clamp.(x, lo, hi)
-    z = (xc .- mean(xc)) ./ max(std(xc), eps()) #standardised for a well-conditioned design
-    A = [ones(length(z)) z z .^ 2 z .^ 3]
-    return exp.(A * (A \ log.(s2)))
-end
+variance_trend(s2::AbstractVector{<:Real}, x::AbstractVector{<:Real}; span::Real = 0.2) = 1 ./ variance_scale_trend(x, s2, span)
 
 #dispatch on the shrinkage method (:vash, :limma or :none): the shrunk variances, their degrees of freedom and the
 #posterior mixture (one component for limma and none, the active shapes for vash)

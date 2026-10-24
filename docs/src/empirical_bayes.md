@@ -121,8 +121,8 @@ covariance ``\text{Cov}(\Gamma_j)`` ([§5.5](pln.md)), MOUTHWASH uses it twice:
 
 ``\lambda`` cannot replace this term. The term is zero without confounding (``\alpha \approx 0``). And it grows with
 the latent variance ``\sigma_j^2``, not with the Poisson noise, so it weighs most on highly expressed genes: a common
-factor ``\lambda`` gives them too little and the weakly expressed genes too much ([§7.3](validation.md)). The Gaussian
-[`mouthwash`](@ref) treats its loadings as exact.
+factor ``\lambda`` gives them too little and the weakly expressed genes too much ([§7.3](validation.md)). The
+Gaussian log-ratio branch ([§5.7](pln.md)) has no such covariance and treats its loadings as exact.
 
 ## 4.4 The noise model
 
@@ -145,7 +145,8 @@ s_j^2`` and the same excess kurtosis, which gives the degrees of freedom
     dilutes it: the ``t`` part carries a share ``1/\lambda`` of the variance, so the excess kurtosis of the sum is
     ``6 / ((\nu - 4)\lambda^2)``. Setting this equal to ``6 / (\nu_\lambda - 4)`` gives the formula.
 
-**Mixture of ``t``.** With vash (§4.5) the prior on the variances is a mixture. The exact likelihood is then a mixture
+**Mixture of ``t``.** In the Gaussian log-ratio branch ([§5.7](pln.md)), vash (§4.5) makes the prior on the
+variances a mixture. The exact likelihood is then a mixture
 of ``t``, one per variance component ``m``, with ``2a_m + d`` degrees of freedom. `likelihood = :tmix` uses this
 mixture. `likelihood = :t` uses a single ``t`` with averaged degrees of freedom. `likelihood = :normal` ignores the
 uncertainty of the variances.
@@ -177,15 +178,18 @@ limma is the case of one component. A mixture can fit variances that are bimodal
 ``\omega_m`` are estimated by mix-SQP, and ``c`` by a one-dimensional search. The shrunk variance is ``\tilde\sigma_j^2
 = 1 / \mathbb E[\sigma_j^{-2} \mid \hat\sigma_j^2]``.
 
-**Where each prior is used.** The PLN fit puts the limma prior inside its own objective, with a scale that follows
-expression ([§5.4](pln.md)). The Gaussian [`mouthwash`](@ref) shrinks its variances after the factor analysis, with
-`shrink_var = :vash` (default), `:limma` or `:none`.
+**Where each prior is used.**
+
+- **The PLN fit** (the default analysis) puts the limma prior inside its own objective ([§5.4](pln.md)).
+- **The Gaussian log-ratio branch** ([§5.7](pln.md)) shrinks its variances after the factor analysis, with
+  `shrink_var = :vash` (default), `:limma` or `:none`.
 
 **Variances that depend on expression.** A prior with one scale pulls every variance towards it. But RNA-seq
 variances depend on expression, so a common scale shrinks the variances of some genes too much and those of others
-too little. The PLN fit therefore uses a local trend by default (`var_prior = :trend`). In the Gaussian
-[`mouthwash`](@ref), `var_trend = true` shrinks the variances around a cubic trend of ``\log \hat\sigma_j^2`` in the
-mean of each gene (as in limma-trend, Law et al. 2014); it is off by default.
+too little. Both analyses therefore centre the prior on a trend in expression: a local fit over the 20 % of genes
+nearest in expression (`span = 0.2`), held flat at the extremes. It is on by default (`var_prior = :trend` in the
+PLN fit, `var_trend = true` in the Gaussian branch). Turned off, every variance is shrunk towards one value, as in
+limma without trend.
 
 ## Functions
 
