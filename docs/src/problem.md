@@ -41,21 +41,22 @@ they are not.
 ## 1.2 When the total RNA content changes
 
 Most normalisation methods assume that the total RNA per cell is the same in all conditions. This includes scaling by
-library size, TMM and the median-of-ratios of DESeq2 (Evans et al. 2018). The assumption often fails:
+library size, TMM and the median-of-ratios of DESeq2 (Evans et al. 2018). When the total changes, these methods
+shift every fold change by the same unknown amount. They miss the global change and can reverse the sign of many
+effects (Lovén et al. 2012; Coate & Doyle 2015).
 
-- **Hypertranscription.** Stem cells, regenerating tissues and many aggressive cancers raise their global
-  transcriptional output (Percharde et al. 2017; Kim et al. 2023; Zatzman et al. 2022). The oncogene c-Myc amplifies
-  the genes already expressed (Nie et al. 2012; Lovén et al. 2012).
-- **Global shutdown.** Quiescent yeast cells reduce their transcriptome several-fold (Marguerat et al. 2012;
-  McKnight et al. 2015; Swygert et al. 2019).
-- **Cell size and ploidy.** Transcript content scales with cell size and with endoreduplication (Bourdon et al. 2012;
-  Pirrello et al. 2018; Robinson et al. 2018; Coate & Doyle 2015).
-- **Plants and light.** The RNA content per cell follows the time of day (Laosuntisuk et al. 2024). When dark-grown
-  seedlings are exposed to light, the cotyledons roughly double their transcript levels. Standard analyses of the same
-  samples did not detect this increase (Schivre et al. 2025).
+A few studies measured this bias:
 
-Spike-in molecules added in a fixed amount per cell can measure such changes (Taruttis et al. 2017). They are rarely
-available.
+- **c-Myc** amplifies the genes already expressed. Normalised data hide this amplification (Lovén et al. 2012).
+- **Endoreduplication** in tomato fruits raises the transcript content per nucleus, which changes the conclusions of
+  the analysis (Pirrello et al. 2018).
+- **Time of day** changes the RNA content of plant cells. A normalisation that accounts for it changes the list of
+  differentially expressed genes (Laosuntisuk et al. 2024).
+- **Light.** When dark-grown seedlings are exposed to light, the cotyledons roughly double their transcript levels.
+  Standard analyses of the same samples did not detect this increase (Schivre et al. 2025).
+
+Spike-in molecules added in a fixed amount per cell can measure such changes (van de Peppel et al. 2003; Taruttis
+et al. 2017). They are rarely available.
 
 ## 1.3 Fold changes are only relative
 
@@ -94,37 +95,23 @@ The two assumptions answer different questions.
 
 ## 1.4 Hidden confounders
 
-The second problem has the same structure. Many sources of variation are not in the design, but change the
-expression of many genes together:
+The second problem has the same structure. Expression data contain variation that is not in the design but changes
+many genes together. Methods that remove it model it as a few hidden factors (Stegle et al. 2012; Gagnon-Bartsch et
+al. 2013; Wang et al. 2017; Gerard & Stephens 2020). Each factor ``l`` is described by:
 
-- **Technical factors.** RNA extraction day, library preparation batch, sequencing lane (Leek et al. 2010). RNA
-  degradation lowers the coverage of long transcripts and of their 5′ end (Gallego Romero et al. 2014).
-- **Tissue composition.** A tissue sample is a mix of cell types. A sample with more fibroblasts shows more
-  fibroblast genes, without any change of regulation inside the cells (Shen-Orr & Gaujoux 2013).
-- **Physiological state.** Time of sampling (circadian genes), stress during collection, nutrition. In post-mortem
-  tissues, the circumstances of death and the ischemic time change thousands of genes (Ferreira et al. 2018).
-- **Individuals.** Genetic background, sex, age.
+- a **factor** ``w_{il}``: its value in sample ``i``;
+- **loadings** ``\Gamma_{lj}``: how strongly gene ``j`` responds to it.
 
-These sources share one property. Each one acts on a **program of genes**: the markers of a cell type, the stress
-response, the genes sensitive to degradation. This gives them a simple form. Each source ``l`` is described by:
-
-- a **factor** ``w_{il}``: how much of the source sample ``i`` has (its fibroblast content, its RNA quality);
-- **loadings** ``\Gamma_{lj}``: how strongly gene ``j`` responds to it (large for fibroblast markers, near zero for
-  myocyte genes).
-
-The contribution to the log-abundance is the product ``w_{il}\Gamma_{lj}``. A few such factors describe most of the
-unwanted variation of a data set (Stegle et al. 2012).
+The contribution to the log-abundance is the product ``w_{il}\Gamma_{lj}``.
 
 **When they bias the results.** A factor that is independent of the condition only adds noise. A factor that differs
 between the conditions creates false effects. This happens in two ways:
 
-- **By design.** The treated samples were processed on another day, or collected at another time.
-- **By biology.** The treatment changes the factor itself. A treatment that induces cell proliferation changes the
-  cell-type mix of the tissue.
+- **By design.** The factor and the condition are associated by chance or by the way the samples were collected.
+- **By biology.** The treatment changes the factor itself.
 
 The second case needs care. A factor caused by the treatment is part of the treatment's effect. Removing it answers a
-narrower question: what changes *besides* this factor? For example, after removing the cell-type mix, the remaining
-effects are changes of expression within cell types. Whether this is the right question depends on the study.
+narrower question: what changes *besides* this factor? Whether this is the right question depends on the study.
 
 **The confounded effect.** Write the association of the factors with the condition as ``\alpha``: the treated
 samples have on average ``\alpha_l`` more of factor ``l``. The apparent effect of the treatment on gene ``j`` is then

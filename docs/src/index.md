@@ -6,8 +6,8 @@ sequencing.*
 An RNA-seq experiment compares the expression of thousands of genes between conditions. Two problems bias this
 comparison.
 
-- **Hidden confounders.** Batch, RNA quality or the mix of cell types change many genes at once. If they differ
-  between the conditions, they create false differences or hide true ones.
+- **Hidden confounders.** Variation that is not in the design changes many genes at once. If it differs between the
+  conditions, it creates false differences or hides true ones.
 - **Composition.** Sequencing measures the *share* of each gene among the reads, not its amount per cell. If the total
   amount of RNA per cell changes between conditions, this change is invisible in the shares.
 

@@ -8,10 +8,9 @@
 *Differential expression from RNA-seq counts, adjusted for hidden confounders and for the compositional nature of
 sequencing.*
 
-Standard RNA-seq normalisation assumes that the total amount of RNA per cell is the same in all conditions. This
-assumption fails in many systems: stem cells and cancers, quiescent cells, changes of cell size and ploidy, seedlings
-exposed to light. Sequencing measures the *share* of each gene among the reads, not its amount, so a global change is
-invisible in the reads. Hidden confounders (batch, sample quality, cell-type mix) add their own bias.
+Standard RNA-seq normalisation assumes that the total amount of RNA per cell is the same in all conditions.
+Sequencing measures the *share* of each gene among the reads, not its amount, so a global change is invisible in the
+reads. Hidden confounders, variation outside the design that changes many genes at once, add their own bias.
 
 PLNRUV.jl treats both problems with one model:
 
