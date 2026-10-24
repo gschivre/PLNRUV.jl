@@ -9,14 +9,13 @@ module PLNRUV
 
 using Distributions, LinearAlgebra, Random, SpecialFunctions, Statistics
 
-export read_gct, filter_genes
+export filter_genes
 export surrogate_factors, assign_groups, thin_counts, thin_2group
 export log_ratio
 export ash, mouthwash, factor_analysis, evalues, ebh
 export pln, pln_mouthwash, choose_q
 export squeeze_var, vash
 
-include("io.jl")
 include("simulation.jl")
 include("transforms.jl")
 include("rotation.jl")

@@ -1,3 +1,4 @@
+#reader of the GTEx count files, used by the benchmark scripts only (data input stays out of the package)
 """
     read_gct(file)
 
@@ -28,13 +29,4 @@ function read_gct(file::AbstractString)
         end
         return (counts = counts, genes = genes, description = description, samples = samples)
     end
-end
-
-"""
-    filter_genes(counts; min_mean = 0.0)
-
-index of the genes (rows) that are observed at least once and with a mean count ≥ min_mean
-"""
-function filter_genes(counts::AbstractMatrix{<:Integer}; min_mean::Real = 0.0)
-    return [i for (i, c) in enumerate(eachrow(counts)) if any(>(0), c) && mean(c) >= min_mean]
 end

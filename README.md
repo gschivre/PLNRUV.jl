@@ -8,27 +8,29 @@
 *Differential expression from RNA-seq counts, adjusted for hidden confounders and for the compositional nature of
 sequencing.*
 
-Standard RNA-seq normalisation assumes that the total amount of mRNA per cell does not change between conditions. That
-assumption fails in many systems: hypertranscription in stem cells and cancers, global shutdown in quiescence, changes
-of cell size and ploidy, a seedling exposed to light. Sequencing measures how RNA is *shared* among genes, not how
-much there is, so a global change is invisible. Hidden confounders (batch, sample quality, cell-type mix) add their
-own bias. PLNRUV.jl treats both problems with one model:
+Standard RNA-seq normalisation assumes that the total amount of RNA per cell is the same in all conditions. This
+assumption fails in many systems: stem cells and cancers, quiescent cells, changes of cell size and ploidy, seedlings
+exposed to light. Sequencing measures the *share* of each gene among the reads, not its amount, so a global change is
+invisible in the reads. Hidden confounders (batch, sample quality, cell-type mix) add their own bias.
 
-1. **Poisson-lognormal counts**: independent Poisson counts on a latent Gaussian layer. Zeros and low counts need no
+PLNRUV.jl treats both problems with one model:
+
+1. **Poisson-lognormal counts**: Poisson counts on a latent Gaussian layer. Zeros and low counts need no
    pseudo-count.
-2. **Hidden confounders as latent factors**, separated from the effects of interest by the rotation of Wang et al.
-   (CATE), and identified by negative control genes or by the sparsity of the effects (RUV-4, RUVB, MOUTHWASH of
-   Gerard & Stephens).
-3. **The compositional offset as one more factor**, whose loadings are fixed to one: a shift common to all genes of a
-   sample. Controls or sparsity estimate it together with the other confounders.
+2. **Hidden confounders as latent factors**, separated from the effects by the rotation of CATE (Wang et al.) and
+   estimated with MOUTHWASH (Gerard & Stephens).
+3. **The compositional offset as one more factor**, whose loadings are all one: a shift common to all genes of a
+   sample.
 
-The model is fitted by empirical Bayes (`pln_mouthwash`): a variational PLN fit, then MOUTHWASH with an ash prior on
-the effects and vash/limma shrinkage of the variances. There is no prior to choose. It reports posterior means, local
-false sign rates and s-values. `choose_q` chooses the number of latent factors by count splitting.
+Neither problem can be solved from the reads alone. The confounders and the offset are identified either by
+**negative control genes** or by **sparsity** (most genes do not change). A global change is then measured relative
+to the controls, and only as well as the controls are truly unchanged. Without controls it cannot be measured.
 
-A fully Bayesian version (a Gibbs sampler on the latent PLN layer that propagates the uncertainty of the confounders)
-is kept on the [`fully-bayesian`](https://github.com/gschivre/PLNRUV.jl/tree/fully-bayesian) branch, until the cause of
-its miscalibration on real data is understood.
+The fit (`pln_mouthwash`) is empirical Bayes: no prior to choose. It reports posterior means, local false sign rates
+and s-values. `choose_q` chooses the number of factors.
+
+A fully Bayesian version is kept on the [`fully-bayesian`](https://github.com/gschivre/PLNRUV.jl/tree/fully-bayesian)
+branch until the cause of its miscalibration on real data is understood.
 
 The package is pure Julia. Comparisons with R packages live in the separate `benchmark/` environment.
 
@@ -44,21 +46,22 @@ Most of the statistical tools in the package are already published, and the pack
 - simulation by binomial thinning (Gerard 2020) and count splitting (Neufeld et al. 2024).
 
 The novelty is the **compositional framework**. Confounder adjustment is applied to sequencing counts while treating
-them as compositions: the change in total transcript abundance between conditions is a hidden factor, estimated
-together with the confounders, rather than an assumption built into the normalisation. The author developed this idea
-during his PhD thesis, after observing that light-grown cotyledons of *Arabidopsis thaliana* roughly double their
-transcriptional activity (Schivre et al. 2025, *Nat. Commun.* 16, 11228), a change that standard normalisation hides.
+them as compositions. The change in total transcript abundance between conditions becomes a hidden factor. It is
+estimated together with the confounders, under an explicit assumption (controls or sparsity), instead of being fixed
+by the normalisation. The author developed this idea during his PhD thesis. He had observed that light-grown
+cotyledons of *Arabidopsis thaliana* roughly double their transcriptional activity (Schivre et al. 2025, *Nat. Commun.*
+16, 11228), a change that standard normalisation hides.
 The full references are in [the manual](docs/src/notation.md).
 
 ## Status
 
-Version 0.1, under development; the interface may change. The components are validated on simulations, and the whole
-method is benchmarked on two-group experiments built from GTEx skeletal muscle counts by binomial thinning, against
-DESeq2, edgeR, limma-voom, CATE, MOUTHWASH (vicar) and a spike-in CATE pipeline
-([validation](docs/src/validation.md)). With 20 samples and negative controls, PLNRUV is calibrated in balanced,
-confounded and global-increase designs, with the power of an oracle that knows the confounders. Known limits: with
-2–3 samples per group the false discovery rate is not controlled, and controls that shift with the condition bias
-the estimates ([assumptions and limits](docs/src/limits.md)).
+Version 0.1, under development; the interface may change. The components are validated on simulations. The whole
+method is benchmarked on two-group experiments built from GTEx skeletal muscle by binomial thinning, against DESeq2,
+edgeR, limma-voom, CATE, MOUTHWASH (vicar) and a spike-in CATE pipeline ([validation](docs/src/validation.md)).
+With 20 samples and valid negative controls, PLNRUV controls the false discovery rate in balanced, confounded and
+global-increase designs. Known limits: with fewer than five samples per group the false discovery rate is not
+controlled, and controls that shift with the condition bias every estimate
+([assumptions and limits](docs/src/limits.md)).
 
 ## Installation
 
@@ -76,13 +79,14 @@ using PLNRUV
 
 # counts: samples x genes (integers); X: design with an intercept, the covariate of interest last;
 # controls: indices of negative control genes (optional)
-fit = pln_mouthwash(counts, X, 2; controls = controls)   # 2 latent factors + the compositional offset
+q = choose_q(counts, X).q                                # number of hidden factors
+fit = pln_mouthwash(counts, X, q; controls = controls)   # q factors + the offset factor
 res = fit.mouthwash
 res.mean     # posterior mean log fold change (natural log)
 res.lfsr     # local false sign rate
-res.svalue   # declare the genes with svalue < 0.05
+res.svalue   # report the genes with svalue < 0.05
 
-fit_free = pln_mouthwash(counts, X, 2)                   # without controls: sparsity identifies the confounders
+fit_sparse = pln_mouthwash(counts, X, q)                 # without controls: sparsity identifies the confounders
 ```
 
 ## Simulating realistic data
@@ -90,14 +94,15 @@ fit_free = pln_mouthwash(counts, X, 2)                   # without controls: spa
 `thin_2group` creates two-group experiments with known effects from real counts, by binomial thinning (Gerard 2020).
 It can add negative controls and groups correlated with hidden factors. The validation uses GTEx v8 gene read counts
 (skeletal muscle). **The GTEx data are not distributed with this package.** Download them from the
-[GTEx portal](https://gtexportal.org) under its terms of use, and read them with `read_gct`.
+[GTEx portal](https://gtexportal.org) under its terms of use. The benchmark scripts read them with
+`benchmark/gct.jl`.
 
 ## Learn more
 
 The manual explains the method step by step, from the biology to the equations. It is written in
 [`docs/src`](docs/src):
 
-- [the problem](docs/src/problem.md): global transcription changes, compositions and confounders;
+- [the problem](docs/src/problem.md): compositions, global changes of transcription and hidden confounders;
 - [the model](docs/src/model.md), [separating the confounders](docs/src/confounders.md),
   [empirical Bayes](docs/src/empirical_bayes.md) and [fitting the PLN layer](docs/src/pln.md);
 - [simulation by binomial thinning](docs/src/simulation.md) and [validation](docs/src/validation.md);

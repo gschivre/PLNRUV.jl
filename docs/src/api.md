@@ -7,7 +7,6 @@ PLNRUV
 ## Data and simulation
 
 ```@docs
-read_gct
 filter_genes
 thin_2group
 thin_counts

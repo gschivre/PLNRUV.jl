@@ -2,6 +2,7 @@
 #run from the benchmark environment: julia -t auto --project=benchmark benchmark/gtex_benchmark.jl <gtex counts file> [nrep]
 #results are written to benchmark/results/ (one CSV row per method, scenario and replicate)
 using PLNRUV, RCall, Random, Distributions, Statistics
+include(joinpath(@__DIR__, "gct.jl"))
 
 R"""
 suppressPackageStartupMessages({library(DESeq2); library(edgeR); library(limma); library(cate); library(vicar)})

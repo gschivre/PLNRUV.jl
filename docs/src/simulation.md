@@ -1,63 +1,58 @@
-# 6. Simulating data by binomial thinning
+# 6. Simulation by binomial thinning
 
-A method for real data should be tested on data that look real: with the real correlations between genes, the real
-overdispersion, the real zeros and the real hidden factors. Parametric simulations get all of these wrong in some way.
-Binomial thinning (Gerard 2020) starts from a real count matrix, here GTEx skeletal muscle (803 samples), and adds
-known effects to it.
+A method for real data should be tested on data that look real: real correlations between genes, real
+overdispersion, real zeros and real hidden factors. Parametric simulations get some of these wrong. Binomial thinning
+(Gerard 2020) starts from a real count matrix and adds known effects to it.
 
-## 6.1 Thinning adds an effect exactly
+## 6.1 Thinning adds an exact effect
 
-Take a gene in a set of real samples, and a log fold change ``\beta_j`` (in log2 units) between two groups. Keep each
-read of sample ``i`` independently with probability
+Take two groups of real samples, with ``x_i = 1`` in group 1 and ``x_i = 0`` in group 0, and a log₂ fold change
+``\beta_j``. Keep each read of gene ``j`` in sample ``i`` independently with probability
 
 ```math
-\pi_{ij} = 2^{\,x_i\beta_j - \max_l x_l\beta_j} ,
+\rho_{ij} = 2^{\,x_i\beta_j - \max_l x_l\beta_j} .
 ```
 
-where ``x_i \in \{0, 1\}`` is the group. The thinned count is ``\text{Binomial}(y_{ij}, \pi_{ij})``.
+**Result** — if the original count is Poisson given any random mean, the thinned count is Poisson with that mean
+times ``\rho_{ij}``. So the expected count of group 1 is multiplied by exactly ``2^{\beta_j}`` relative to group 0.
+Everything else in the data is kept: correlations, factors, overdispersion.
 
-**Result** — if the original count is Poisson with any random mean ``\Lambda_{ij}`` (a Poisson-lognormal count, for
-instance), the thinned count is Poisson with mean ``\pi_{ij}\Lambda_{ij}``. So the expected count of group 1 is
-multiplied by exactly ``2^{\beta_j}`` relative to group 0, and everything else in the data (correlations, factors,
-overdispersion) is kept.
+Thinning the changed genes also lowers the library sizes of the samples where they were thinned. This is the
+compositional effect of [§1.1](problem.md), created naturally.
 
-Thinning the differentially expressed genes reduces the library sizes of the samples where they were thinned. This
-is the compositional effect of [§1.4](problem.md), created naturally: the simulated data are compositional in the
-same way as real data.
+## 6.2 Controls and the truth
 
-## 6.2 Negative controls and the truth
+A set of genes is drawn as negative controls, with ``\beta_j = 0``. To test robustness, controls can also carry small
+effects (`ctrl_signal`). Among the other genes, a proportion `prop_null` is null. The others get effects drawn from
+`signal`. Because thinning acts on the expected counts, the true effect of each gene relative to the controls is
+``\beta_j``.
 
-A set of ``n_c`` genes is drawn as negative controls, with ``\beta_j = 0`` exactly. They can also be made
-approximately null (`ctrl_signal = Normal(0, 0.1)`), to test robustness. Among the other genes, a proportion
-`prop_null` is null, and the effects of the rest are drawn from `signal`. Because thinning acts on the expected
-counts, the true effect relative to the controls is ``\beta_j`` itself.
+## 6.3 Groups correlated with hidden factors
 
-## 6.3 Confounding: groups correlated with hidden factors
+To create confounding, the groups are not assigned at random:
 
-In real data the group is often correlated with hidden factors. To reproduce this, the groups are not assigned at
-random:
+1. The factors ``U`` of the real samples are estimated by a PCA of their log counts. Each sample is centred first,
+   which removes sequencing depth; then each gene is centred.
+2. A score ``\zeta_i = U_i^\top h + \sqrt{1 - \lVert h\rVert^2}\,\epsilon_i``, with ``\epsilon_i \sim \mathcal N(0,
+   1)``, is drawn for each sample. The samples with the largest scores form group 1.
 
-1. the hidden factors ``U`` of the subsample are estimated by the PCA of its doubly centred log counts: each sample
-   is centred (a centred log-ratio, which removes sequencing depth), then each gene;
-2. a latent score ``w = U r + \sqrt{1 - \lVert r\rVert^2}\,\epsilon`` is drawn, and the samples with the largest
-   ``w`` form group 1.
-
-**Result** — for a Gaussian ``w`` and a group proportion ``p``, the correlation between the group indicator and
-factor ``k`` is ``r_k\,\varphi(t)/\sqrt{p(1-p)}``, with ``t`` the ``1-p`` quantile of the standard normal. So
-``r`` is chosen to hit a target correlation (`target_cor`).
+**Result** — if a fraction ``f`` of the samples is in group 1, the correlation between the group and factor ``l`` is
+``h_l\,\phi(z_f)/\sqrt{f(1-f)}``, where ``\phi`` is the standard normal density and ``z_f`` its ``1 - f`` quantile.
+The weights ``h`` are set to reach the target correlations (`target_cor`).
 
 !!! details "Derivation"
-    For jointly Gaussian ``(U_k, w)`` with unit variances and covariance ``r_k``, Stein's lemma gives
-    ``\mathbb E[U_k \mathbf 1\{w > t\}] = r_k\,\varphi(t)``. The indicator has variance ``p(1-p)`` and ``U_k`` has
-    variance one, which gives the correlation.
+    ``U_l`` and ``\zeta`` are jointly normal with unit variances and covariance ``h_l``. Stein's lemma gives
+    ``\mathbb E[U_l \mathbf 1\{\zeta > z_f\}] = h_l\,\phi(z_f)``. The group indicator has variance ``f(1-f)``.
 
-The factors are centred per sample on purpose. Sequencing depth is technical, and every method normalises for it.
-The confounding that matters comes from biological or unwanted variation. (seqgendiff does not centre the samples,
-so its leading factor largely tracks depth.)
+The samples are centred on purpose. Sequencing depth is technical, and every method corrects for it. The confounding
+that matters comes from the biological and unwanted variation of [§1.4](problem.md). seqgendiff does not centre the
+samples, so its first factor mostly follows depth.
 
 ## Functions
 
-- [`read_gct`](@ref), [`filter_genes`](@ref): read GTEx count files and filter genes.
 - [`thin_2group`](@ref): the complete two-group simulation.
-- [`thin_counts`](@ref): thinning for an arbitrary design and coefficient matrix.
+- [`thin_counts`](@ref): thinning for any design and coefficient matrix.
 - [`surrogate_factors`](@ref), [`assign_groups`](@ref): the confounded group assignment.
+- [`filter_genes`](@ref): keep the genes observed often enough.
+
+Reading the GTEx count files is part of the benchmark scripts (`benchmark/gct.jl`), not of the package.

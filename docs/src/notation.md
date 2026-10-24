@@ -2,24 +2,67 @@
 
 ## Notation
 
+Each symbol has one meaning in the whole manual. Logarithms are natural; log₂ is used only to report simulated effects.
+
+**Indices and data**
+
 | symbol | meaning |
 |---|---|
-| ``n``, ``p``, ``k``, ``q`` | samples, genes, columns of the design, latent factors (offset factor excluded) |
-| ``y_{ij}`` | count of gene ``j`` in sample ``i`` |
-| ``o_i`` | offset of sample ``i`` (log library size) |
-| ``Z_{ij}``, ``\mu_{ij}`` | latent log abundance, its mean ``x_i^\top B_j + w_i^\top\Gamma_j`` |
-| ``\sigma_j^2`` | overdispersion (latent residual variance) of gene ``j`` |
-| ``X = [X_1\, X_2]``, ``B_j`` | design (nuisance, interest), coefficients of gene ``j`` |
-| ``\beta_j``, ``\tilde\beta_j`` | effect of interest, confounded effect ``\beta_j + \alpha^\top\Gamma_j`` |
-| ``W``, ``\Gamma``, ``\alpha`` | latent factors, their loadings, their regression on the design |
-| ``\alpha_1``, ``\delta`` | coefficient of the offset factor: the compositional shift |
+| ``i = 1, \dots, n`` | samples |
+| ``j = 1, \dots, p`` | genes |
+| ``y_{ij}`` | read count of gene ``j`` in sample ``i`` |
+| ``N_i``, ``o_i`` | library size of sample ``i`` and the offset ``o_i = \log N_i`` |
+| ``X``, ``x_i`` | design matrix (``n \times k``, intercept first, covariate of interest last) and its row ``i`` |
 | ``C`` | the set of negative control genes |
-| ``Q``, ``R``, ``R_{22}`` | QR decomposition of the design, the block of the covariate of interest |
-| ``s_j``, ``\lambda`` | standard error of ``\hat{\tilde\beta}_j``, variance inflation |
-| ``g``, ``\pi_k``, ``\sigma_k`` | ash prior, its weights and grid of standard deviations |
+
+**Model**
+
+| symbol | meaning |
+|---|---|
+| ``Z_{ij}`` | latent log-abundance of gene ``j`` in sample ``i`` |
+| ``\mu_{ij}`` | mean of ``Z_{ij}`` given the design and the factors |
+| ``\sigma_j^2`` | latent variance (overdispersion) of gene ``j`` |
+| ``\bar y_{ij}`` | expected count, ``e^{o_i + \mu_{ij} + \sigma_j^2/2}`` |
+| ``B_j`` | coefficients of gene ``j`` on the design (``k`` values) |
+| ``\beta_j`` | effect of interest of gene ``j``: the true change, the target of inference |
+| ``q`` | number of free hidden factors |
+| ``w_i`` | factors of sample ``i``: the offset factor ``w_{i0}`` (a shift common to all genes), then the ``q`` hidden factors |
+| ``\Gamma_j`` | loadings of gene ``j`` on the factors (``q + 1`` values); ``\Gamma_{0j} = 1`` for the offset factor |
+| ``\alpha``, ``\alpha_0`` | association of the factors with the covariate of interest (``q + 1`` values); ``\alpha_0`` is the compositional shift |
+
+**Estimation**
+
+| symbol | meaning |
+|---|---|
+| ``Q``, ``R`` | QR decomposition of the design, ``X = QR`` |
+| ``u``, ``R_{kk}`` | the column of ``Q`` and the diagonal entry of ``R`` for the covariate of interest |
+| ``b_j``, ``s_j`` | raw (confounded) estimate of gene ``j`` and its standard error |
+| ``d`` | residual degrees of freedom, ``n - k - q - 1`` |
+| ``\hat\sigma_j^2``, ``\tilde\sigma_j^2`` | estimated and shrunk variances |
+| ``d_0``, ``\sigma_0^2`` | degrees of freedom and scale of the limma prior on the variances |
+| ``c``, ``a_m``, ``\omega_m`` | scale, shapes and weights of the vash prior on the variances |
+| ``g`` | prior distribution of the effects ``\beta_j`` (ash) |
+| ``\pi_l``, ``\tau_l`` | weights and standard deviations of its components; ``\tau_0 = 0`` is the point mass at zero |
+| ``\bar\beta`` | centre of the non-null part of ``g`` (zero unless a global change is detected) |
+| ``\lambda`` | variance inflation of MOUTHWASH |
+| ``\nu`` | degrees of freedom of the ``t`` likelihood |
 | ``M_{ij}``, ``S^2_{ij}`` | variational mean and variance of ``Z_{ij}`` |
-| ``d``, ``d_0``, ``s_0^2``, ``c``, ``a_k`` | degrees of freedom, limma prior, vash scale and shapes |
-| lfsr, s-value | local false sign rate, its running average |
+
+**Simulation and model choice**
+
+| symbol | meaning |
+|---|---|
+| ``\rho_{ij}`` | probability of keeping a read in binomial thinning |
+| ``U`` | factors estimated from the real counts, used to build confounded groups |
+| ``\theta``, ``r_j`` | fraction of the counts in the training part, and precision of the beta-binomial split |
+
+**Error rates**
+
+| term | meaning |
+|---|---|
+| lfsr | local false sign rate: the probability that the reported sign of ``\beta_j`` is wrong |
+| s-value | the average lfsr of all genes at least as significant |
+| FDP | false discovery proportion: wrong discoveries (null genes or wrong signs) among all discoveries |
 
 ## References
 
@@ -33,15 +76,17 @@
   27–43.
 - Evans C., Hardin J. & Stoebel D. M. (2018) Selecting between-sample RNA-Seq normalization methods from the
   perspective of their assumptions. *Brief. Bioinform.* 19, 776–792.
+- Ferreira P. G. et al. (2018) The effects of death and post-mortem cold ischemia on human tissue transcriptomes.
+  *Nat. Commun.* 9, 490.
 - Gagnon-Bartsch J. A., Jacob L. & Speed T. P. (2013) Removing unwanted variation from high dimensional data with
   negative controls. Technical report, UC Berkeley.
+- Gallego Romero I., Pai A. A., Tung J. & Gilad Y. (2014) RNA-seq: impact of RNA degradation on transcript
+  quantification. *BMC Biol.* 12, 42.
 - Gerard D. (2020) Data-based RNA-seq simulations by binomial thinning. *BMC Bioinformatics* 21, 206.
 - Gerard D. & Stephens M. (2020) Empirical Bayes shrinkage and false discovery rate estimation, allowing for unwanted
   variation. *Biostatistics* 21, 15–32.
 - Gerard D. & Stephens M. (2021) Unifying and generalizing methods for removing unwanted variation based on negative
   controls. *Stat. Sin.* 31, 1145–1166.
-- Huang A. & Wand M. P. (2013) Simple marginally noninformative prior distributions for covariance matrices.
-  *Bayesian Anal.* 8, 439–452.
 - Kim Y., Carbonetto P., Stephens M. & Anitescu M. (2020) A fast algorithm for maximum likelihood estimation of
   mixture proportions using sequential quadratic programming. *J. Comput. Graph. Stat.* 29, 261–273.
 - Kim Y.-K. et al. (2023) Absolute scaling of single-cell transcriptomes identifies pervasive hypertranscription in
@@ -51,6 +96,8 @@
 - Law C. W., Chen Y., Shi W. & Smyth G. K. (2014) voom: precision weights unlock linear model analysis tools for
   RNA-seq read counts. *Genome Biol.* 15, R29.
 - Lawson C. L. & Hanson R. J. (1974) *Solving Least Squares Problems*. Prentice-Hall.
+- Leek J. T. et al. (2010) Tackling the widespread and critical impact of batch effects in high-throughput data.
+  *Nat. Rev. Genet.* 11, 733–739.
 - Lovén J. et al. (2012) Revisiting global gene expression analysis. *Cell* 151, 476–482.
 - Lu M. & Stephens M. (2016) Variance adaptive shrinkage (vash): flexible empirical Bayesian estimation of variances.
   *Bioinformatics* 32, 3428–3434.
@@ -78,8 +125,12 @@
   2308–2329.
 - Schivre G. et al. (2025) Genome-scale transcriptome augmentation during *Arabidopsis thaliana* photomorphogenesis.
   *Nat. Commun.* 16, 11228.
+- Shen-Orr S. S. & Gaujoux R. (2013) Computational deconvolution: extracting cell type-specific information from
+  heterogeneous samples. *Curr. Opin. Immunol.* 25, 571–578.
 - Smyth G. K. (2004) Linear models and empirical Bayes methods for assessing differential expression in microarray
   experiments. *Stat. Appl. Genet. Mol. Biol.* 3, 3.
+- Stegle O., Parts L., Piipari M., Winn J. & Durbin R. (2012) Using probabilistic estimation of expression residuals
+  (PEER) to obtain increased power and interpretability of gene expression analyses. *Nat. Protoc.* 7, 500–507.
 - Stephens M. (2017) False discovery rates: a new deal. *Biostatistics* 18, 275–294.
 - Swygert S. G. et al. (2019) Condensin-dependent chromatin compaction represses transcription globally during
   quiescence. *Mol. Cell* 73, 533–546.

@@ -110,3 +110,12 @@ function thin_2group(
     )
 end
 thin_2group(counts::AbstractMatrix{<:Integer}; kwargs...) = thin_2group(Random.default_rng(), counts; kwargs...)
+
+"""
+    filter_genes(counts; min_mean = 0.0)
+
+index of the genes (rows) that are observed at least once and with a mean count ≥ min_mean
+"""
+function filter_genes(counts::AbstractMatrix{<:Integer}; min_mean::Real = 0.0)
+    return [i for (i, c) in enumerate(eachrow(counts)) if any(>(0), c) && mean(c) >= min_mean]
+end

@@ -1,15 +1,7 @@
 using PLNRUV, Aqua, Test, Random, Distributions, Statistics
 
 @testset "PLNRUV" begin
-    @testset "read_gct" begin
-        file = tempname() * ".gct"
-        write(file, "#1.3\n2\t3\t0\t0\nid\tName\tDescription\tS1\tS2\tS3\n1\tG1\tgene one\t0\t5\t7\n2\tG2\tgene two\t1\t2.0\t3\n")
-        d = read_gct(file)
-        @test d.counts == [0 5 7; 1 2 3]
-        @test d.genes == ["G1", "G2"]
-        @test d.samples == ["S1", "S2", "S3"]
-        write(file, "#1.2\n1\t2\nName\tDescription\tS1\tS2\nG1\tgene one\t4\t0\n")
-        @test read_gct(file).counts == [4 0]
+    @testset "filter_genes" begin
         @test filter_genes([0 0; 1 3; 10 20]; min_mean = 2.5) == [3]
     end
 
@@ -241,7 +233,8 @@ using PLNRUV, Aqua, Test, Random, Distributions, Statistics
         fit = pln_mouthwash(Y, X, 0; controls = 1:c)
         mw = fit.mouthwash
         nc = (c + 1):p
-        @test fit.pln.iterations < 500
+        @test fit.pln.converged && fit.pln.iterations < 500
+        @test mw.converged
         @test 0.7 < mw.λ < 1.5 #the latent-scale standard errors need little inflation
         @test cor(mw.mean[nc], β[nc]) > 0.85
         disc = nc[mw.svalue[nc] .< 0.05]

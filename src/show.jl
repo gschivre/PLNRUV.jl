@@ -20,6 +20,7 @@ function Base.show(io::IO, ::MIME"text/plain", fit::MouthwashFit; ntop::Integer 
     est = setdiff(1:p, fit.controls)
     printstyled(io, "Empirical Bayes fit (MOUTHWASH)"; bold = true)
     println(io)
+    fit.converged || printstyled(io, "  not converged: increase maxiter or check the data\n"; color = :yellow)
     println(io, "  ", p, " genes (", length(fit.controls), " controls", isempty(fit.controls) ? ": confounders identified by sparsity" : "", ")")
     println(io, "  Confounders   α = [", join(fmt_x.(fit.α, 3), ", "), "] (first: compositional offset, if fitted) · variance inflation λ = ", fmt_x(fit.λ, 2))
     centre = fit.g.mode == 0 ? "" : string(", centred at the mode ", fmt_x(fit.g.mode, 3), " (shared shift of the non-null genes)")

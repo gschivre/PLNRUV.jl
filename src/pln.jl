@@ -76,6 +76,7 @@ struct PLNFit
     σ2mix::NamedTuple #posterior mixture of each overdispersion (weights w, squared scales s2, df; genes x components)
     elbo::Float64
     iterations::Int
+    converged::Bool #relative change of the ELBO below tol before maxiter
 end
 
 """
@@ -85,6 +86,7 @@ fit the PLN model to counts Y (samples x genes) with design X and q latent facto
 offsets default to the log library sizes
 with var_trend = true the overdispersions are shrunk around their trend in the mean log-abundance (the mean–dispersion
 trend of RNA-seq, as in limma-trend) instead of toward a common scale
+the fit stops when the relative change of the ELBO is below tol; `converged` is false if maxiter was reached first
 """
 function pln(
         Y::AbstractMatrix{<:Integer}, X::AbstractMatrix{<:Real}, q::Integer;
@@ -104,6 +106,7 @@ function pln(
     μ, σ2, B, Γ, df, σ2mix, warm = pln_mstep(M, S2, QR, k, q, nfix, σ2, shrink_var, var_trend)
     elbo = -Inf
     iter = 0
+    converged = false
     for outer in 1:maxiter
         iter = outer
         Threads.@threads for j in 1:p
@@ -113,19 +116,20 @@ function pln(
         end
         μ, σ2, B, Γ, df, σ2mix, warm = pln_mstep(M, S2, QR, k, q, nfix, σ2, shrink_var, var_trend, warm)
         elbonew = pln_elbo(Y, o, M, S2, μ, σ2)
+        #absolute change: the shrinkage in the M-step is not an ELBO ascent, so the ELBO may decrease
         converged = abs(elbonew - elbo) < tol * abs(elbonew)
         elbo = elbonew
         converged && break
     end
-    return PLNFit(M, S2, μ, B, Γ, σ2, o, df, σ2mix, elbo, iter)
+    return PLNFit(M, S2, μ, B, Γ, σ2, o, df, σ2mix, elbo, iter, converged)
 end
 
 """
     pln_mouthwash(Y, X, q; controls = Int[], cov_of_interest = size(X, 2), offset_factor = true, nullweight = 10, estimate_λ = true, likelihood = :t, mode = :auto, kwargs...)
 
 empirical Bayes branch: PLN fit (stage 1) followed by MOUTHWASH (stage 2)
-β̃ⱼ = q'Mⱼ / R₂₂ with q the column of Q for the covariate of interest; its standard error uses the latent-scale
-variance of each cell vᵢⱼ = σⱼ² + 1 / λᵢⱼ (lognormal overdispersion + Poisson noise, λᵢⱼ the expected count),
+bⱼ = u'Mⱼ / Rₖₖ with u the column of Q for the covariate of interest; its standard error uses the latent-scale
+variance of each cell σⱼ² + 1 / ȳᵢⱼ (lognormal variance + Poisson noise, ȳᵢⱼ the expected count),
 the variances of M itself are too small in the residual rows that are shrunk toward the fitted factors
 with controls, mode = :auto centres the non-null part of the effect prior at an estimated mode when a shift shared by
 many genes (a global change of transcription) raises the held-out likelihood (see ash); the null stays at zero
@@ -157,7 +161,7 @@ function pln_mouthwash(
         pln = fit,
         mouthwash = MouthwashFit(
             β̃, s, mw.α, mw.λ, mw.g, mw.loglik, mw.mean, mw.sd, mw.lfsr, mw.lfdr,
-            cumulative_rate(mw.lfsr), cumulative_rate(mw.lfdr), mw.evalue, collect(controls),
+            cumulative_rate(mw.lfsr), cumulative_rate(mw.lfdr), mw.evalue, collect(controls), mw.converged,
         ),
     )
 end

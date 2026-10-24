@@ -1,6 +1,7 @@
 #cross-check of the binomial thinning simulator against the R package seqgendiff
 #run from the benchmark environment (julia --project=benchmark benchmark/seqgendiff_check.jl <gtex counts file>)
 using PLNRUV, RCall, Random, Statistics
+include(joinpath(@__DIR__, "gct.jl"))
 
 R"suppressPackageStartupMessages(library(seqgendiff))"
 

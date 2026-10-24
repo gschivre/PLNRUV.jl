@@ -89,7 +89,8 @@ function mouthwash_fit(
     end
     λ = 1.0
     r = β̃ - Γ' * α
-    grid = ash_grid(r[free], s[free])
+    #grid from the standard errors that include the uncertainty of α̂ (the variances the likelihood uses)
+    grid = ash_grid(r[free], sqrt.(s2[free]))
     #block coordinate ascent for the prior components (σ2, means)
     function fitloop(σ2, means, λ, α, r)
         K = length(σ2)
@@ -99,12 +100,15 @@ function mouthwash_fit(
         W = zeros(p, K)
         π = fill(1 / K, K)
         obj = -Inf
+        converged = false
         for _ in 1:maxiter
             mixture_lik!(Lik, logscale, r, N, σ2, λ; means = means)
             π, _ = mixture_weights(Lik, logscale, free, prior; π0 = π)
             #observed penalised log-likelihood (controls only use the point mass)
             objnew = mixture_objective(π, Lik, logscale, free, prior) + sum(j -> log(Lik[j, 1]) + logscale[j], controls; init = 0.0)
-            converged = objnew - obj < tol * (abs(objnew) + tol)
+            #absolute change: with a t likelihood the α and λ steps are not exact ascent steps, and a decrease of
+            #the objective must not pass for convergence
+            converged = abs(objnew - obj) < tol * (abs(objnew) + tol)
             obj = objnew
             converged && break
             #posterior component probabilities
@@ -125,7 +129,7 @@ function mouthwash_fit(
             end
             estimate_λ && (λ = update_λ(r, N, σ2, W; means = means))
         end
-        return (; π, obj, W, λ, α, r, Lik, logscale, prior)
+        return (; π, obj, W, λ, α, r, Lik, logscale, prior, converged)
     end
     σ2, means = mode_components(grid, 0.0)
     f = fitloop(σ2, means, λ, α, r)
@@ -136,7 +140,7 @@ function mouthwash_fit(
         σ2, means = mode_components(grid, μ)
         f = fitloop(σ2, means, f.λ, f.α, f.r)
     end
-    (; π, obj, W, λ, α, r, Lik, logscale, prior) = f
+    (; π, obj, W, λ, α, r, Lik, logscale, prior, converged) = f
     K = length(σ2)
     Nv = scale_noise(N, λ)
     if alpha_uncertainty && isempty(controls)
@@ -154,7 +158,7 @@ function mouthwash_fit(
     end
     e = evalues(r, Nv, sqrt.(σ2), π; means = means)
     e[controls] .= 0.0
-    return merge((α = α, λ = λ, g = (σ = sqrt.(σ2), μ = means, π = π, mode = μ, mode_gain = gain), loglik = obj, evalue = e), post)
+    return merge((α = α, λ = λ, g = (σ = sqrt.(σ2), μ = means, π = π, mode = μ, mode_gain = gain), loglik = obj, evalue = e, converged = converged), post)
 end
 
 struct MouthwashFit
@@ -172,6 +176,7 @@ struct MouthwashFit
     qvalue::Vector{Float64}
     evalue::Vector{Float64} #compound e-values (use with ebh for FDR control under dependence)
     controls::Vector{Int}
+    converged::Bool #relative change of the objective below tol before maxiter
 end
 
 #noise model of the estimates for a likelihood option: :tmix the mixture of t of the vash posterior (exact for the
@@ -212,6 +217,6 @@ function mouthwash(
     )
     return MouthwashFit(
         β̃, s, fit.α, fit.λ, fit.g, fit.loglik, fit.mean, fit.sd, fit.lfsr, fit.lfdr,
-        cumulative_rate(fit.lfsr), cumulative_rate(fit.lfdr), fit.evalue, collect(controls),
+        cumulative_rate(fit.lfsr), cumulative_rate(fit.lfdr), fit.evalue, collect(controls), fit.converged,
     )
 end
