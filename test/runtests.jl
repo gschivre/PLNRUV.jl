@@ -305,6 +305,34 @@ using PLNRUV, Aqua, Test, Random, Distributions, Statistics
         @test occursin("Confounders", txt) && occursin("Discoveries", txt)
     end
 
+    @testset "PLN-PCA by variational empirical Bayes (experimental)" begin
+        rng = Xoshiro(12)
+        n, p, c = 20, 400, 60
+        X = [ones(n) repeat([0.0, 1.0], inner = n ÷ 2)]
+        W = randn(rng, n, 2) .+ 0.8 .* X[:, 2] #confounders correlated with the group
+        β = [zeros(c); (rand(rng, p - c) .< 0.2) .* randn(rng, p - c)]
+        Z = (randn(rng, p) .+ 3)' .+ X[:, 2] .* (β' .+ 0.5) .+ W * (0.4 .* randn(rng, 2, p)) .+ 0.5 .* randn(rng, n, p)
+        Y = [rand(rng, Poisson(exp(Z[i, j]))) for i in 1:n, j in 1:p]
+        o = vec(log.(sum(Y; dims = 2)))
+        LA = PLNRUV.LinearAlgebra #not a test dependency
+        Q2 = (LA.qr(X).Q * Matrix(LA.I, n, n))[:, 3:n]
+        r = PLNRUV.plnpca_run(Y, X, 4; maxiter = 1)
+        st, pr = r.state, r.priors
+        elbo = [PLNRUV.plnpca_elbo(st, Y, X, o, pr)]
+        for _ in 1:100
+            PLNRUV.plnpca_sweep!(st, pr, Y, X, o, Q2, true)
+            push!(elbo, PLNRUV.plnpca_elbo(st, Y, X, o, pr))
+        end
+        @test all(diff(elbo) .> -1.0e-8 * abs(elbo[end])) #exact coordinate ascent
+        @test maximum(abs, X' * st.m) < 1.0e-8 #scores in the residual space of X
+        @test count(>(0.01), pr.τ2) == 2 #extra factors switched off (ARD)
+        fit = pln_mouthwash(Y, X, 2; controls = 1:c, fit = :plnpca)
+        @test fit.pln.converged && fit.mouthwash.converged
+        @test 0.18 < median(fit.pln.σ2) < 0.35 #truth 0.25
+        @test cor(fit.mouthwash.mean[(c + 1):p], β[(c + 1):p]) > 0.7
+        @test_throws ArgumentError pln_mouthwash(Y, X, 2; fit = :other)
+    end
+
     @testset "Code quality (Aqua)" begin
         Aqua.test_all(PLNRUV)
     end

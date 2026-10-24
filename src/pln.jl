@@ -133,14 +133,16 @@ variance of each cell σⱼ² + 1 / ȳᵢⱼ (lognormal variance + Poisson noise
 the variances of M itself are too small in the residual rows that are shrunk toward the fitted factors
 with controls, mode = :auto centres the non-null part of the effect prior at an estimated mode when a shift shared by
 many genes (a global change of transcription) raises the held-out likelihood (see ash); the null stays at zero
+fit = :plnpca uses the experimental variational empirical Bayes fit plnpca instead of pln; kwargs go to the fit
 """
 function pln_mouthwash(
         Y::AbstractMatrix{<:Integer}, X::AbstractMatrix{<:Real}, q::Integer;
         controls::AbstractVector{<:Integer} = Int[], cov_of_interest::Integer = size(X, 2),
         offset_factor::Bool = true, nullweight::Real = 10, estimate_λ::Bool = true, alpha_uncertainty::Bool = true,
-        likelihood::Symbol = :t, mode::Symbol = :auto, mode_threshold::Real = 0.05, kwargs...
+        likelihood::Symbol = :t, mode::Symbol = :auto, mode_threshold::Real = 0.05, fit::Symbol = :pln, kwargs...
     )
-    fit = pln(Y, X, q; offset_factor = offset_factor, kwargs...)
+    method = fit
+    fit = fit_latent(method, Y, X, q; offset_factor = offset_factor, kwargs...)
     k = size(X, 2)
     F = qr(X[:, [setdiff(1:k, cov_of_interest); cov_of_interest]])
     qint = (F.Q * Matrix(I, size(X, 1), k))[:, k]

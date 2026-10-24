@@ -1,10 +1,13 @@
 #Poisson-lognormal factor model fitted by variational empirical Bayes (design/plnpca.md)
 #    yᵢⱼ | Zᵢⱼ ~ Poisson(exp(oᵢ + Zᵢⱼ)),   Zᵢⱼ | ... ~ N(xᵢ'Bⱼ + ℓᵢ + uᵢ'Γⱼ, σⱼ²)
-#    uᵢ ~ N(0, I_q),   Γⱼₗ ~ N(0, τₗ²),   Bⱼ ~ N(b̄, τB² I),   σⱼ² ~ InvGamma(a0, b0)
-#variational distributions, mean field: q(Zᵢⱼ) = N(Mᵢⱼ, S2ᵢⱼ), q(uᵢ) = N(mᵢ, S), q(Γⱼ) = N(gⱼ, Gⱼ), q(Bⱼ) = N(βⱼ, Vⱼ),
-#q(σⱼ²) = InvGamma(aⱼ, bⱼ); the offset ℓ is a free parameter in the residual space of X (its component along X
-#belongs to B). Given q(Z), the rest is a linear Gaussian factor model: every update is conjugate and exact, so the
-#ELBO increases at every step. The expected squared residual seen by σⱼ² includes the uncertainty of Bⱼ, Γⱼ and uᵢ,
+#    U = Q₂V,   Vᵣ ~ N(0, I_q),   Γⱼₗ ~ N(0, τₗ²),   Bⱼ ~ N(b̄, τB² I),   σⱼ² ~ InvGamma(a0, b0)
+#the scores U (rows uᵢ) live in the residual space of X, spanned by the n - k orthonormal columns of Q₂, as the
+#residual rows of the CATE rotation: the loadings are learned from the variation that the design cannot explain, and
+#the factors cannot absorb the effects of interest
+#variational distributions, mean field: q(Zᵢⱼ) = N(Mᵢⱼ, S2ᵢⱼ), q(Vᵣ) = N(m̃ᵣ, S) (so E[uᵢ] = mᵢ with m = Q₂m̃ and
+#Cov(uᵢ) = hᵢS, hᵢ = (Q₂Q₂')ᵢᵢ), q(Γⱼ) = N(gⱼ, Gⱼ), q(Bⱼ) = N(βⱼ, Vⱼ), q(σⱼ²) = InvGamma(aⱼ, bⱼ); the offset ℓ is a
+#free parameter in the residual space of X (its component along X belongs to B). Given q(Z), the rest is a linear
+#Gaussian factor model: every update is conjugate and exact, so the ELBO increases at every step. The expected squared residual seen by σⱼ² includes the uncertainty of Bⱼ, Γⱼ and uᵢ,
 #which gives the REML-type divisor (n - k - q, in the linear Gaussian model) instead of n
 #hyperparameters (τₗ², a0, b0) are estimated from all genes at every sweep (empirical Bayes; one prior variance per
 #factor: automatic relevance determination); b̄ and τB are fixed (b̄ the median of the initial coefficients)
@@ -16,8 +19,9 @@ mutable struct PLNPCAState
     V::Vector{Matrix{Float64}} #p, k x k
     g::Matrix{Float64} #q x p
     G::Vector{Matrix{Float64}} #p, q x q
-    m::Matrix{Float64} #n x q
-    S::Matrix{Float64} #q x q, common to the samples
+    m::Matrix{Float64} #n x q, in the residual space of X
+    S::Matrix{Float64} #q x q, covariance of each row of V
+    h::Vector{Float64} #n, diagonal of Q₂Q₂' (Cov(uᵢ) = hᵢ S)
     ℓ::Vector{Float64} #n
     a::Vector{Float64} #p
     b::Vector{Float64} #p
@@ -37,8 +41,8 @@ logσ2(st) = log.(st.b) .- digamma.(st.a)
 #prior mean of the latent values, xᵢ'βⱼ + ℓᵢ + mᵢ'gⱼ (n x p)
 latent_mean(st, X) = X * st.β .+ st.ℓ .+ st.m * st.g
 
-#E[(Zᵢⱼ - xᵢ'Bⱼ - ℓᵢ - uᵢ'Γⱼ)²] under q (n x p): squared residual of the means, plus S2ᵢⱼ, xᵢ'Vⱼxᵢ, gⱼ'Sgⱼ, mᵢ'Gⱼmᵢ
-#and tr(GⱼS)
+#E[(Zᵢⱼ - xᵢ'Bⱼ - ℓᵢ - uᵢ'Γⱼ)²] under q (n x p): squared residual of the means, plus S2ᵢⱼ, xᵢ'Vⱼxᵢ, mᵢ'Gⱼmᵢ and
+#hᵢ (gⱼ'Sgⱼ + tr(GⱼS))
 function expected_sq(st, X)
     E = (st.M .- latent_mean(st, X)) .^ 2 .+ st.S2
     n, p = size(st.M)
@@ -52,7 +56,7 @@ function expected_sq(st, X)
             G = st.G[j]
             c = dot(gj, st.S * gj) + tr(G * st.S)
             for i in 1:n
-                E[i, j] += c + dot(view(st.m, i, :), G * view(st.m, i, :))
+                E[i, j] += st.h[i] * c + dot(view(st.m, i, :), G * view(st.m, i, :))
             end
         end
     end
@@ -74,7 +78,8 @@ function plnpca_elbo(st, Y, X, o, pr::PLNPCAPriors)
             0.5 * (log(st.S2[i, j]) + 1) - 0.5 * (lσ[j] + w[j] * E[i, j])
     end
     if q > 0
-        elbo -= sum(kl_gauss(view(st.m, i, :), st.S, zeros(q), ones(q)) for i in 1:n)
+        #KL of the n - k rows of V: Σᵣ ‖m̃ᵣ‖² = ‖m‖² because Q₂ has orthonormal columns
+        elbo -= 0.5 * (sum(st.h) * (tr(st.S) - q - logdet(st.S)) + sum(abs2, st.m))
         elbo -= sum(kl_gauss(view(st.g, :, j), st.G[j], zeros(q), pr.τ2) for j in 1:p)
     end
     elbo -= sum(kl_gauss(view(st.β, :, j), st.V[j], pr.b̄, fill(pr.τB^2, k)) for j in 1:p)
@@ -122,8 +127,9 @@ function plnpca_offset!(st, X, Q2)
     return st
 end
 
-#scores: q(uᵢ) Gaussian with the common covariance S = (I + Σⱼ wⱼ (gⱼgⱼ' + Gⱼ))⁻¹
-function plnpca_scores!(st, X)
+#scores: q(Vᵣ) Gaussian with the common covariance S = (I + Σⱼ wⱼ (gⱼgⱼ' + Gⱼ))⁻¹, and m = Q₂m̃ the projection on
+#the residual space of X of the unconstrained update
+function plnpca_scores!(st, X, Q2)
     q = size(st.g, 1)
     q == 0 && return st
     w = invσ2(st)
@@ -133,7 +139,7 @@ function plnpca_scores!(st, X)
     end
     st.S = Matrix(inv(Symmetric(P)))
     R = st.M .- X * st.β .- st.ℓ
-    st.m .= (R .* w') * st.g' * st.S
+    st.m .= Q2 * (Q2' * ((R .* w') * st.g' * st.S))
     return st
 end
 
@@ -142,8 +148,7 @@ function plnpca_loadings!(st, X, pr)
     q = size(st.g, 1)
     q == 0 && return st
     w = invσ2(st)
-    n = size(st.M, 1)
-    A = st.m' * st.m .+ n .* st.S
+    A = st.m' * st.m .+ sum(st.h) .* st.S
     R = st.M .- X * st.β .- st.ℓ
     MR = st.m' * R #q x p
     for j in axes(st.g, 2)
@@ -185,97 +190,56 @@ function plnpca_hyper!(pr, st)
 end
 
 #one sweep of the coordinate ascent
-function plnpca_sweep!(st, pr, Y, X, o, Q2)
+function plnpca_sweep!(st, pr, Y, X, o, Q2, offset_factor)
     plnpca_cells!(st, Y, X, o)
     plnpca_coefficients!(st, X, pr)
-    plnpca_offset!(st, X, Q2)
-    plnpca_scores!(st, X)
+    offset_factor && plnpca_offset!(st, X, Q2)
+    plnpca_scores!(st, X, Q2)
     plnpca_loadings!(st, X, pr)
     plnpca_variances!(st, X, pr)
     plnpca_hyper!(pr, st)
     return st
 end
 
-#the primary parameters, extrapolated by SQUAREM (positive ones on the log scale); the covariances Vⱼ, Gⱼ, S, the
-#shapes aⱼ and the hyperparameters are recomputed from them by the next sweep
-plnpca_pack(st) = [vec(st.M); vec(log.(st.S2)); vec(st.β); vec(st.g); vec(st.m); st.ℓ; log.(st.b)]
-function plnpca_unpack!(st, θ)
-    i = 0
-    for A in (st.M, st.S2, st.β, st.g, st.m)
-        len = length(A)
-        A .= reshape(θ[(i + 1):(i + len)], size(A))
-        i += len
-    end
-    st.S2 .= exp.(st.S2)
-    st.ℓ .= θ[(i + 1):(i + length(st.ℓ))]
-    i += length(st.ℓ)
-    st.b .= exp.(θ[(i + 1):end])
-    return st
+"""
+    plnpca(Y, X, q; offsets = log library sizes, offset_factor = true, τB = 5, maxiter = 1000, tol = 1e-8)
+
+experimental: Poisson-lognormal factor model fitted by variational empirical Bayes (design/plnpca.md), the model of
+pln with random factor scores in the residual space of X, random loadings, random coefficients (whose uncertainty
+gives the overdispersions a REML-type correction) and an inverse-gamma prior on the overdispersions; every update is
+exact and the ELBO increases at every sweep; the loadings have one prior variance per factor (automatic relevance
+determination) and the hyperparameters are estimated from all genes; maxiter counts sweeps, and the fit stops when
+the relative change of the ELBO falls below tol
+return a PLNFit (σ2 = 1 / E[1 / σⱼ²], df = 2a0 + n - k - q - 1 as for a variance shrunk by limma), usable in place
+of pln by pln_mouthwash and choose_q (fit = :plnpca)
+"""
+function plnpca(Y::AbstractMatrix{<:Integer}, X::AbstractMatrix{<:Real}, q::Integer; offset_factor::Bool = true, kwargs...)
+    r = plnpca_run(Y, X, q; offset_factor = offset_factor, kwargs...)
+    st, pr = r.state, r.priors
+    n, p = size(Y)
+    k = size(X, 2)
+    σ2 = st.b ./ st.a
+    df = fill(2 * pr.a0 + n - k - q - Int(offset_factor), p)
+    Γ = offset_factor ? [ones(1, p); st.g] : st.g
+    σ2mix = (w = ones(p, 1), s2 = reshape(σ2, :, 1), df = reshape(df, :, 1))
+    return PLNFit(st.M, st.S2, latent_mean(st, X), st.β, Γ, σ2, r.offsets, df, σ2mix, r.elbo, r.sweeps, r.converged)
 end
 
-#one SQUAREM cycle (Varadhan R. & Roland C., Scand. J. Stat. (2008), scheme S3): two sweeps θ₁ = F(θ₀), θ₂ = F(θ₁),
-#step α = -‖r‖ / ‖v‖ within [-stepmax, -1] (r = θ₁ - θ₀, v = θ₂ - 2θ₁ + θ₀), extrapolation θ₀ - 2αr + α²v and one
-#stabilising sweep from it, kept when its ELBO is at least that of θ₂ (every sweep is an ascent of the exact ELBO, so
-#this safeguard keeps the objective increasing); stepmax starts at 1 and is multiplied by 4 when the bound is used
-function plnpca_squarem!(st, pr, Y, X, o, Q2, stepmax)
-    θ0 = plnpca_pack(st)
-    st1, pr1 = deepcopy(st), deepcopy(pr)
-    plnpca_sweep!(st1, pr1, Y, X, o, Q2)
-    θ1 = plnpca_pack(st1)
-    st2, pr2 = deepcopy(st1), deepcopy(pr1)
-    plnpca_sweep!(st2, pr2, Y, X, o, Q2)
-    θ2 = plnpca_pack(st2)
-    e2 = plnpca_elbo(st2, Y, X, o, pr2)
-    r, v = θ1 .- θ0, θ2 .- 2 .* θ1 .+ θ0
-    nv = norm(v)
-    α = nv == 0 ? -1.0 : clamp(-norm(r) / nv, -stepmax[], -1.0)
-    atbound = α == -stepmax[]
-    nsweeps = 2
-    if α < -1
-        stx, prx = deepcopy(st2), deepcopy(pr2)
-        plnpca_unpack!(stx, θ0 .- 2α .* r .+ α^2 .* v)
-        ex = try
-            plnpca_sweep!(stx, prx, Y, X, o, Q2)
-            nsweeps += 1
-            plnpca_elbo(stx, Y, X, o, prx)
-        catch err
-            err isa InterruptException && rethrow()
-            -Inf
-        end
-        if isfinite(ex) && ex >= e2
-            atbound && (stepmax[] *= 4)
-            return stx, prx, ex, nsweeps
-        end
-    else
-        atbound && (stepmax[] *= 4)
-    end
-    return st2, pr2, e2, nsweeps
-end
-
-"""
-    plnpca(Y, X, q; offsets = log library sizes, offset_factor = true, τB = 5, maxiter = 1000, tol = 1e-8, accelerate = true)
-
-experimental: Poisson-lognormal factor model fitted by variational empirical Bayes (design/plnpca.md), the same model
-as pln with random factor scores and loadings, random coefficients (whose uncertainty gives the overdispersions a
-REML-type correction) and an inverse-gamma prior on the overdispersions; every update is exact and the ELBO increases
-at every sweep; the loadings have one prior variance per factor (automatic relevance determination) and the
-hyperparameters are estimated from all genes; accelerate = true extrapolates the sweeps by SQUAREM; maxiter counts
-sweeps, and the fit stops when the relative change of the ELBO falls below tol
-return the state, the priors, the ELBO path, the number of sweeps and whether it converged
-"""
-function plnpca(
+#the fit itself: the variational state and the hyperparameters (prior variance of each factor in priors.τ2)
+function plnpca_run(
         Y::AbstractMatrix{<:Integer}, X::AbstractMatrix{<:Real}, q::Integer;
         offsets::AbstractVector{<:Real} = vec(log.(sum(Y; dims = 2))), offset_factor::Bool = true, τB::Real = 5.0,
-        maxiter::Integer = 1000, tol::Real = 1.0e-8, accelerate::Bool = true
+        maxiter::Integer = 1000, tol::Real = 1.0e-8
     )
     n, p = size(Y)
     k = size(X, 2)
-    @assert n - k > q + Int(offset_factor) "not enough residual degrees of freedom"
+    nfix = Int(offset_factor)
+    @assert n - k > q + nfix "not enough residual degrees of freedom"
     X = collect(float.(X))
     o = collect(float.(offsets))
     F = qr(X)
-    Q2 = offset_factor ? (F.Q * Matrix(I, n, n))[:, (k + 1):n] : zeros(n, 0)
-    #initialisation from the log counts: least squares, then an SVD of the residuals
+    Q2 = (F.Q * Matrix(I, n, n))[:, (k + 1):n] #orthonormal basis of the residual space of X
+    #initialisation from the log counts: least squares, then an SVD of the residuals (in the residual space of X)
     M = log.(Y .+ 0.5) .- o
     β = F \ M
     R = M .- X * β
@@ -286,28 +250,28 @@ function plnpca(
     g = q > 0 ? (D.S[1:q] .* D.Vt[1:q, :]) ./ sqrt(n) : zeros(0, p)
     s2 = max.(vec(var(R .- m * g; dims = 1)), 1.0e-3)
     st = PLNPCAState(
-        M, 1 ./ (Y .+ 1.0), β, [zeros(k, k) for _ in 1:p], g, [zeros(q, q) for _ in 1:p], m, Matrix{Float64}(I, q, q) ./ n,
-        ℓ, fill(n / 2 + 1, p), s2 .* (n / 2)
+        M, 1 ./ (Y .+ 1.0), β, [zeros(k, k) for _ in 1:p], g, [zeros(q, q) for _ in 1:p], m,
+        Matrix{Float64}(I, q, q) ./ n, vec(sum(abs2, Q2; dims = 2)), ℓ, fill(n / 2 + 1, p), s2 .* (n / 2)
     )
     pr = PLNPCAPriors(vec(median(β; dims = 2)), τB, q > 0 ? vec(mean(abs2, g; dims = 2)) : Float64[], 1.0, median(s2))
     plnpca_hyper!(pr, st)
-    elbo = [plnpca_elbo(st, Y, X, o, pr)]
+    elbo = plnpca_elbo(st, Y, X, o, pr)
     sweeps = 0
     converged = false
-    stepmax = Ref(1.0)
     while sweeps < maxiter
-        if accelerate
-            st, pr, e, ns = plnpca_squarem!(st, pr, Y, X, o, Q2, stepmax)
-        else
-            plnpca_sweep!(st, pr, Y, X, o, Q2)
-            e, ns = plnpca_elbo(st, Y, X, o, pr), 1
-        end
-        sweeps += ns
-        push!(elbo, e)
-        if abs(elbo[end] - elbo[end - 1]) < tol * abs(elbo[end])
-            converged = true
-            break
-        end
+        plnpca_sweep!(st, pr, Y, X, o, Q2, offset_factor)
+        sweeps += 1
+        elbonew = plnpca_elbo(st, Y, X, o, pr)
+        converged = abs(elbonew - elbo) < tol * abs(elbonew)
+        elbo = elbonew
+        converged && break
     end
-    return (state = st, priors = pr, elbo = elbo, offsets = o, sweeps = sweeps, converged = converged)
+    return (state = st, priors = pr, offsets = o, elbo = elbo, sweeps = sweeps, converged = converged)
+end
+
+#the PLN layer used by pln_mouthwash and choose_q
+function fit_latent(method::Symbol, Y, X, q; kwargs...)
+    method === :pln && return pln(Y, X, q; kwargs...)
+    method === :plnpca && return plnpca(Y, X, q; kwargs...)
+    throw(ArgumentError("unknown fit $method (use :pln or :plnpca)"))
 end
