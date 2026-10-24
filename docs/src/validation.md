@@ -12,12 +12,14 @@ non-null genes reported with the right sign.
 - **Thinning probabilities.** `thin_counts` and `seqgendiff::thin_diff`, with the same design and coefficients on
   counts of ``10^7``: the largest difference in thinning probability over 6 000 counts is ``6.9 \times 10^{-4}``,
   the binomial noise expected at that depth.
-- **Confounded groups.** Both simulators given seqgendiff's own surrogate variables, with target correlations
-  ``(0.6, 0.2)``, 30 replicates of 100 GTEx samples:
+- **Confounded groups.** By default `thin_2group` keeps a group assignment only if its correlations are within 0.15
+  of the target, so the target is met in every data set ([§6.3](simulation.md)). The score alone
+  (`assignment = :threshold`, as in seqgendiff) meets it only on average. Both given seqgendiff's own surrogate
+  variables, with target correlations ``(0.6, 0.2)``, mean realised correlation over 30 replicates of 100 GTEx samples:
 
 | | factor 1 (target 0.6) | factor 2 (target 0.2) |
 |---|---|---|
-| PLNRUV | 0.58 | 0.19 |
+| PLNRUV, `assignment = :threshold` | 0.58 | 0.19 |
 | seqgendiff | 0.46 | 0.15 |
 
 ## 7.2 ash and MOUTHWASH
