@@ -1,10 +1,10 @@
-#figures of the GTEx benchmark (benchmark/results/gtex_benchmark.csv, and gtex_controls.csv when present)
+#figure of the benchmark with misspecified controls (benchmark/results/gtex_controls.csv, 10 samples per group); the
+#benchmark by number of samples per group is drawn by sample_size_figures.jl
 #run: julia --project=benchmark/figures benchmark/figures/make_figures.jl [methods to leave out, e.g. PLNRUV_gaussian_logratio]
-#writes docs/src/figures/benchmark.png (and benchmark_controls.png)
+#writes docs/src/figures/benchmark_controls.png
 using CairoMakie, Statistics
 
 const ROOT = joinpath(@__DIR__, "..", "..")
-const CSV = joinpath(ROOT, "benchmark", "results", "gtex_benchmark.csv")
 const OUT = joinpath(ROOT, "docs", "src", "figures")
 
 #display names, in plotting order (top to bottom), and their family
@@ -100,19 +100,15 @@ function benchmark_figure(rows; scenarios = SCENARIOS, subtitle = SUBTITLE)
     return fig
 end
 
-#methods left out of the figure (rows kept in the CSV), e.g. a branch whose rows are out of date
-rows = filter(r -> !(r["method"] in ARGS), read_rows(CSV))
+#misspecified controls (benchmark/grid_benchmark.jl, run_scenarios with CTRL_SCENARIOS); methods named on the
+#command line are left out (rows kept in the CSV)
 mkpath(OUT)
-fig = benchmark_figure(rows)
-save(joinpath(OUT, "benchmark.png"), fig; px_per_unit = 2)
-
-#misspecified controls (benchmark/grid_benchmark.jl, run_controls)
 const CTRL_CSV = joinpath(ROOT, "benchmark", "results", "gtex_controls.csv")
 if isfile(CTRL_CSV)
     crows = filter(r -> !(r["method"] in ARGS), read_rows(CTRL_CSV))
     cfig = benchmark_figure(
         crows; scenarios = CTRL_SCENARIOS,
-        subtitle = "Misspecified negative controls: as the confounded and global-increase scenarios, but the 200 controls carry small effects. 20 samples; mean ± 1 SE.",
+        subtitle = "Misspecified negative controls: as the confounded and global-increase scenarios, but the 200 controls carry small effects. 10 samples per group; mean ± 1 SE.",
     )
     save(joinpath(OUT, "benchmark_controls.png"), cfig; px_per_unit = 2)
 end

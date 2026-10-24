@@ -56,14 +56,45 @@ end
 const CURVE_HEADER = "stratum,kind,level,ndisc,fdp,power"
 
 #everything a figure might need later, as plain types (no package structs, so the file stays readable when
-#PLNRUV changes): truth, mean counts and each method's log2 fold changes and adjusted p- or s-values
+#PLNRUV changes): the simulated data set itself (counts, design, factors, truth), so that later methods run on
+#exactly the data the saved methods saw, and each method's log2 fold changes and adjusted p- or s-values
 function save_dataset(dir, key, sim, res)
     mkpath(dir)
     data = (
-        julia = string(VERSION), β = sim.β, controls = sim.controls, meancount = vec(mean(sim.counts; dims = 1)),
-        genes = sim.genes, samples = sim.samples, X = sim.X, methods = Dict(m => (lfc = l, q = v) for (m, (l, v)) in res),
+        julia = string(VERSION), β = sim.β, controls = sim.controls, null = sim.null, signal = sim.signal,
+        meancount = vec(mean(sim.counts; dims = 1)), counts = sim.counts, X = sim.X, factors = sim.factors,
+        genes = sim.genes, samples = sim.samples, realized_cor = sim.realized_cor, tries = sim.tries,
+        redraws = sim.redraws, methods = Dict(m => (lfc = l, q = v) for (m, (l, v)) in res),
     )
     serialize(joinpath(dir, key * ".jls"), data)
+    return nothing
+end
+
+#the simulated data set of a scenario, or nothing when its target confounding is out of reach (too few samples,
+#e.g. no balanced 2 + 2 design: the three possible splits span the residual space of the intercept)
+function simulate(seed, M, sc; ngenes, nsamp, nctrl)
+    return try
+        thin_2group(
+            Xoshiro(seed), M; ngenes = ngenes, nsamp = nsamp, nctrl = nctrl, prop_null = sc.prop_null,
+            signal = sc.signal, ctrl_signal = get(sc, :ctrl, Dirac(0.0)), target_cor = sc.target_cor
+        )
+    catch err
+        err isa ErrorException && occursin("no group assignment", err.msg) || rethrow()
+        nothing
+    end
+end
+
+#one line of <name>_design.csv: realised correlations with the first two surrogate variables, assignment draws
+#(tries) and sample redraws of the data set, or NA when the target was out of reach
+function design_row(file, prefix, sim)
+    dfile = replace(file, ".csv" => "_design.csv")
+    isfile(dfile) || write(
+        dfile, (count(==(','), prefix) == 1 ? "scenario,rep" : "scenario,npergroup,signal,rep") *
+            ",rho1,rho2,tries,redraws\n"
+    )
+    ρ = sim === nothing ? ["NA", "NA"] : [length(sim.realized_cor) >= l ? string(round(sim.realized_cor[l]; digits = 3)) : "NA" for l in 1:2]
+    tail = sim === nothing ? "NA,NA" : "$(sim.tries),$(sim.redraws)"
+    open(io -> println(io, join((prefix, ρ..., tail), ",")), dfile, "a")
     return nothing
 end
 
@@ -73,7 +104,8 @@ const SIGNAL = [0.4, 0.8, 1.6]
 #scenarios at signal strength s: the effect sd (and the mean shift of the global scenario) scale with s, s = 0.8 being
 #the scenarios of gtex_benchmark.jl
 grid_scenarios(s) = [
-    (name = "balanced", prop_null = 0.8, signal = Normal(0.0, s), target_cor = Float64[]),
+    (name = "randomised", prop_null = 0.8, signal = Normal(0.0, s), target_cor = Float64[]),
+    (name = "balanced", prop_null = 0.8, signal = Normal(0.0, s), target_cor = [0.0, 0.0]),
     (name = "confounded", prop_null = 0.8, signal = Normal(0.0, s), target_cor = [0.6, 0.2]),
     (name = "global_increase", prop_null = 0.4, signal = Normal(1.25s, 0.625s), target_cor = [0.6, 0.2]),
 ]
@@ -101,9 +133,13 @@ oracle_offsets(counts, nulls) = log.(size_factors(permutedims(counts), nulls))
 #true effect prior in place of the fitted ash prior
 function oracle_methods(sim, sc)
     n = size(sim.counts, 1)
-    U = sim.factors
+    #the two surrogate variables that define the scenarios, in every scenario: with random groups their chance
+    #correlation with the group is confounding too
+    U = sim.factors[:, 1:min(2, size(sim.factors, 2))]
     X = Float64[ones(n) U sim.X[:, 2]]
-    q = max(0, min(2, n - size(X, 2) - 2)) #at least 2 residual degrees of freedom for the variances
+    #no oracle when the design leaves fewer than 2 residual degrees of freedom for the variances
+    n - size(X, 2) < 2 && return Dict{String, Tuple{Vector{Float64}, Vector{Float64}}}()
+    q = max(0, min(2, n - size(X, 2) - 2))
     #only the null genes: the controls are untouched only when they are exact
     nulls = sim.null
     fit = pln_mouthwash(
@@ -120,44 +156,55 @@ function oracle_methods(sim, sc)
     means = [0.0, mean(d) * log(2)]
     #the corrected estimates and their noise as in mouthwash_fit (default t likelihood): control-based α, its
     #uncertainty added to the variances, then the fitted inflation
-    Γ, s2, ctrl = fit.pln.Γ, mw.s .^ 2, sim.controls
+    #loading uncertainty: its error variance α'Cov(Γⱼ)α, and E[ΓΓ'] in the normal equations of α
+    Γ, s2, ctrl, Γcov = fit.pln.Γ, mw.s .^ 2, sim.controls, fit.pln.Γcov
     a = zeros(p)
+    l = size(Γ, 1) > 0 ? [dot(mw.α, Γcov[j] * mw.α) for j in 1:p] : zeros(p)
     if size(Γ, 1) > 0 #factors switched off by the fit carry no loadings
-        ΓC = Γ[:, ctrl]
-        G = Symmetric(ΓC * (ΓC' ./ s2[ctrl]))
+        w = 1 ./ (s2[ctrl] .+ l[ctrl])
+        G = Symmetric(Γ[:, ctrl] * (Γ[:, ctrl]' .* w) .+ sum(w[i] .* Γcov[j] for (i, j) in enumerate(ctrl)))
         free = setdiff(1:p, ctrl)
         a[free] .= vec(sum(Γ[:, free] .* (G \ Γ[:, free]); dims = 1))
     end
     r = size(Γ, 1) > 0 ? mw.β̃ - Γ' * mw.α : mw.β̃
-    N = PLNRUV.scale_noise(PLNRUV.NoiseModel(s2 .+ a, fit.pln.df), mw.λ)
+    N = PLNRUV.scale_noise(PLNRUV.NoiseModel(s2 .+ l .+ a, fit.pln.df), mw.λ)
     post = PLNRUV.ash_posterior(r, N, σ2, π; means = means)
     out["oracle_prior"] = (post.mean ./ log(2), PLNRUV.cumulative_rate(post.lfsr))
     return out
 end
+
+#set R_ONLY[] = true to run only the R methods (the PLNRUV and oracle rows are added later on the saved data sets)
+const R_ONLY = Ref(false)
 
 function grid_methods(sim, sc, q)
     c, X, ctrl = sim.counts, sim.X, sim.controls
     out = Dict{String, Tuple{Vector{Float64}, Vector{Float64}}}()
     merge!(out, safely(r_methods, c, X, ctrl, q))
     merge!(out, safely(paper_method, c, X, ctrl, q))
+    R_ONLY[] && return out
     merge!(out, safely(julia_methods, c, X, ctrl, q))
     merge!(out, safely(oracle_methods, sim, sc))
     return out
 end
 
-function run_grid(M; nrep = 10, ngenes = 2_000, nctrl = 200, seed = 1, outfile = nothing, done = Set{Tuple}())
+function run_grid(
+        M; nrep = 10, ngenes = 2_000, nctrl = 200, seed = 1, outfile = nothing, done = Set{Tuple}(),
+        npergroup = NPERGROUP, signals = SIGNAL
+    )
     header = "scenario,npergroup,signal,rep,q,method,ndisc,fdp,power,rmse"
     if outfile !== nothing && !isfile(outfile)
         write(outfile, header * "\n")
     end
-    for g in NPERGROUP, s in SIGNAL, sc in grid_scenarios(s), r in 1:nrep
+    for g in npergroup, s in signals, sc in grid_scenarios(s), r in 1:nrep
         (sc.name, g, s, r) in done && continue
         STOP[] && return nothing
         #the same seeds across signal strengths and scenarios: the same samples and genes, only the effects differ
-        sim = thin_2group(
-            Xoshiro(seed + 100g + r), M; ngenes = ngenes, nsamp = 2g, nctrl = nctrl, prop_null = sc.prop_null,
-            signal = sc.signal, target_cor = sc.target_cor
-        )
+        sim = simulate(seed + 100g + r, M, sc; ngenes = ngenes, nsamp = 2g, nctrl = nctrl)
+        outfile === nothing || design_row(outfile, join((sc.name, g, s, r), ","), sim)
+        if sim === nothing
+            logline("grid $(sc.name) n/group = $g signal = $s rep $r: NA (target out of reach)")
+            continue
+        end
         q = nfactors(2g)
         idx = setdiff(1:ngenes, sim.controls)
         res = grid_methods(sim, sc, q)
@@ -224,10 +271,12 @@ function run_scenarios(M, scenarios, file; nrep = 10, ngenes = 2_000, nctrl = 20
     for sc in scenarios, r in 1:nrep
         (sc.name, r) in done && continue
         STOP[] && return nothing
-        sim = thin_2group(
-            Xoshiro(seed + r), M; ngenes = ngenes, nsamp = nsamp, nctrl = nctrl, prop_null = sc.prop_null,
-            signal = sc.signal, ctrl_signal = sc.ctrl, target_cor = sc.target_cor
-        )
+        sim = simulate(seed + r, M, sc; ngenes = ngenes, nsamp = nsamp, nctrl = nctrl)
+        design_row(file, join((sc.name, r), ","), sim)
+        if sim === nothing
+            logline("$(basename(file)) $(sc.name) rep $r: NA (target out of reach)")
+            continue
+        end
         idx = setdiff(1:ngenes, sim.controls)
         res = grid_methods(sim, sc, q)
         meancount = vec(mean(sim.counts; dims = 1))

@@ -135,11 +135,6 @@ function julia_methods(counts, X, controls, q)
     out["PLNRUV_EB_sparsity"] = (ebf.mean ./ log(2), ebf.svalue)
     g = mouthwash(log_ratio(counts, controls), X, q; controls = controls)
     out["PLNRUV_gaussian_logratio"] = (g.mean ./ log(2), g.svalue)
-    #the older PLN fit (fixed scores and loadings), for comparison with the default plnpca
-    pc = pln_mouthwash(counts, X, q; controls = controls, fit = :pln).mouthwash
-    out["PLNRUV_PLN_EB_controls"] = (pc.mean ./ log(2), pc.svalue)
-    pcf = pln_mouthwash(counts, X, q; fit = :pln).mouthwash
-    out["PLNRUV_PLN_EB_sparsity"] = (pcf.mean ./ log(2), pcf.svalue)
     return out
 end
 
@@ -154,8 +149,11 @@ function metrics(lfc, q, β, idx; level = 0.05)
     )
 end
 
+#target_cor: realised correlations of the groups with the first surrogate variables, within 0.15 (rerandomisation);
+#randomised: plain random groups, with the chance confounding of a real randomised experiment
 const SCENARIOS = [
-    (name = "balanced", prop_null = 0.8, signal = Normal(0.0, 0.8), target_cor = Float64[]),
+    (name = "randomised", prop_null = 0.8, signal = Normal(0.0, 0.8), target_cor = Float64[]),
+    (name = "balanced", prop_null = 0.8, signal = Normal(0.0, 0.8), target_cor = [0.0, 0.0]),
     (name = "confounded", prop_null = 0.8, signal = Normal(0.0, 0.8), target_cor = [0.6, 0.2]),
     (name = "global_increase", prop_null = 0.4, signal = Normal(1.0, 0.5), target_cor = [0.6, 0.2]),
 ]
