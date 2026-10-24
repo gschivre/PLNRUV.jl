@@ -12,7 +12,7 @@
 | or: most effects are zero | [§4.1](empirical_bayes.md) | a global change of transcription | use controls |
 | a global change multiplies all genes equally | [§1.5](problem.md) | a change that favours some genes | read the gene effects as relative to the common part |
 | one covariate of interest | [§3.1](confounders.md) | several contrasts | run once per contrast |
-| loadings and confounders are plugged in | [§4.3](empirical_bayes.md) | weak factors, low counts, very few samples | see §8.3 |
+| confounders are plugged in | [§4.3](empirical_bayes.md) | weak factors, very few samples; loadings plugged in by the Gaussian branch | see §8.4 |
 
 ## 8.2 What the reads cannot tell
 
@@ -49,6 +49,24 @@ and an independent measurement, such as RNA per cell or imaging, are useful chec
 
 ## 8.4 Few samples
 
-With fewer than five samples per group, the false discovery rate is not controlled ([§7.5](validation.md)). The
-variance of each gene then rests on one or two degrees of freedom. Real samples also differ in overall variability,
-which the model does not describe. With such designs, treat the discoveries as candidates to confirm.
+The benchmark covers 5 and 10 samples per group ([§7.4](validation.md)). Smaller designs are not validated yet.
+What is known about them:
+
+- **Two samples per group.** No hidden factor can be fitted: the design and the offset leave one residual degree of
+  freedom. Confounding is then not corrected, and a confounded design gives false discoveries. A balanced 2 + 2 design
+  does not exist ([§6.3](simulation.md)).
+- **Three samples per group.** Each gene has one or two residual degrees of freedom, so few discoveries are possible.
+- **Chance confounding.** With 2 or 3 samples per group, a random split is often almost aligned with a main source of
+  variation of the samples. Look at the main factors of your samples before trusting the results.
+- **Ten samples per group or more.** The ``t`` likelihood is conservative: the achieved false discovery proportion is
+  below the nominal level, and some power is lost. The normal likelihood (`likelihood = :normal`) is calibrated there,
+  but not with fewer samples.
+
+Real samples also differ in overall variability, which the model does not describe. With few samples, treat the
+discoveries as candidates to confirm.
+
+## 8.5 The Gaussian branch
+
+The Gaussian [`mouthwash`](@ref) on log-ratios ([§5.6](pln.md)) does not model the Poisson noise, distorts low counts
+through the pseudocount, and treats the loadings as exact. Prefer the PLN fit at low depth and in confounded designs
+with few samples.

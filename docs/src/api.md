@@ -12,6 +12,7 @@ thin_2group
 thin_counts
 surrogate_factors
 assign_groups
+rerandomise_groups
 log_ratio
 ```
 
@@ -19,7 +20,6 @@ log_ratio
 
 ```@docs
 pln_mouthwash
-pln
 plnpca
 mouthwash
 factor_analysis

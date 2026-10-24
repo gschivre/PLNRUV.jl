@@ -41,7 +41,8 @@ Most of the statistical tools in the package are already published, and the pack
 - confounder adjustment by rotation (CATE, Wang et al. 2017), negative controls (RUV-4, Gagnon-Bartsch et al. 2013),
   RUVB and MOUTHWASH (Gerard & Stephens 2020, 2021);
 - adaptive shrinkage of the effects (ash, Stephens 2017) fitted by mix-SQP (Kim et al. 2020), and shrinkage of the
-  variances (limma, Smyth 2004; vash, Lu & Stephens 2016);
+  variances (limma, Smyth 2004, with an expression trend inside the PLN fit; vash, Lu & Stephens 2016, for Gaussian
+  data);
 - simulation by binomial thinning (Gerard 2020) and count splitting (Neufeld et al. 2024).
 
 The novelty is the **compositional framework**. Confounder adjustment is applied to sequencing counts while treating
@@ -57,9 +58,9 @@ The full references are in [the manual](docs/src/notation.md).
 Version 0.1, under development; the interface may change. The components are validated on simulations. The whole
 method is benchmarked on two-group experiments built from GTEx skeletal muscle by binomial thinning, against DESeq2,
 edgeR, limma-voom, CATE, MOUTHWASH (vicar) and a spike-in CATE pipeline ([validation](docs/src/validation.md)).
-With 20 samples and valid negative controls, PLNRUV controls the false discovery rate in balanced, confounded and
-global-increase designs. Known limits: with fewer than five samples per group the false discovery rate is not
-controlled, and controls that shift with the condition bias every estimate
+With 5 or 10 samples per group and valid negative controls, PLNRUV controls the false discovery rate in balanced,
+confounded and global-increase designs. Known limits: designs with fewer than five samples per group are not validated
+yet, and controls that shift with the condition bias every estimate
 ([assumptions and limits](docs/src/limits.md)).
 
 ## Installation

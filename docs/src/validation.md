@@ -10,7 +10,7 @@ non-null genes reported with the right sign.
 ## 7.1 The simulator
 
 - **Thinning probabilities.** `thin_counts` and `seqgendiff::thin_diff`, with the same design and coefficients on
-  counts of ``10^7``: the largest difference in thinning probability over 6 000 cells is ``6.9 \times 10^{-4}``,
+  counts of ``10^7``: the largest difference in thinning probability over 6 000 counts is ``6.9 \times 10^{-4}``,
   the binomial noise expected at that depth.
 - **Confounded groups.** Both simulators given seqgendiff's own surrogate variables, with target correlations
   ``(0.6, 0.2)``, 30 replicates of 100 GTEx samples:
@@ -39,123 +39,107 @@ The offset coefficient is estimated at ``\hat\alpha_0 \approx 1.0``, the true sh
 
 ## 7.3 The PLN layer
 
-Counts simulated from the PLN model: 30 samples, 1 500 genes, 150 controls, two confounders, compositional shift of
-1, latent variances ``\sigma_j^2 \sim \text{Gamma}(4, 0.05)``.
+- **The latent values.** The Lambert W solution matches a brute-force maximisation (``M = 0.50043`` against
+  ``0.50045`` on a grid of step ``5\times 10^{-5}``). ``\mathcal W_0(e^t)`` is accurate to ``3\times10^{-15}`` and
+  finite up to ``t = 800``.
+- **Degrees of freedom of the variances** ([§5.4](pln.md)). Variances drawn with ``a_0 = 2``, 4 samples, 2 000 genes:
 
-- **E-step.** The Lambert W solution matches a brute-force maximisation (``M = 0.50043`` against ``0.50045`` on a grid
-  of step ``5\times 10^{-5}``). ``\mathcal W_0(e^t)`` is accurate to ``3\times10^{-15}`` and finite up to ``t = 800``.
-- **Standard errors.** With no confounding, at low depth (22 % zeros): ``\hat\lambda \approx 1.0``, coverage of 95 %
-  intervals 95–96 %, FDP 2.5–4.6 %. The latent-scale standard error of [§5.4](pln.md) needs no inflation. Standard
-  errors taken from the residual rows of ``M`` instead gave an FDP of 25 %.
-- **Against a Gaussian analysis of log-CPM.** Similar at a median count of 32. At a median count of about 3, the PLN
-  branch has a lower RMSE (0.33–0.43 against 0.36–0.45) and a lower FDP.
-- **Variance shrinkage**, low depth with confounding, mean FDP over four replicates: none 7.1 %, limma 6.3 %,
-  **vash 5.4 %**, at equal RMSE. On variances with a bimodal distribution, the mean squared error of
-  ``\log\tilde\sigma_j^2`` is 0.42 raw, 0.27 with limma and 0.24 with vash.
+| | estimated ``a_0`` |
+|---|---|
+| exact EM (Gaussian data) | 2.02 |
+| mean field, every count counted (Gaussian data) | 5.84 |
+| PLN fit, GTEx-like counts | 2.25 (common prior), 2.34 (trend) |
 
-With confounding and low counts, the FDP is still slightly above the nominal level. The Gaussian pipeline shows the
-same excess, so it comes from the estimation of the confounders, not from the PLN layer.
+  Without the correction, ``a_0`` ran to its upper bound on low counts and the fit did not converge.
+- **The variance trend.** On 200 GTEx muscle samples (4 000 genes), ``\sigma_j^2`` follows a U-shape in expression:
+  0.78 for the weakest genes, about 0.09 in the upper middle, 0.33 for the strongest. A local fit predicts the
+  variances best (cross-validated error 0.59 against 1.03 for one common value and 0.68 for the DESeq2 form), with a
+  flat optimum for spans 0.05–0.2. Around the trend the genes still spread like ``a_0 \approx 2``.
+- **Uncertainty of the loadings** ([§4.3](empirical_bayes.md)). Estimates confounded with ``\alpha = 2``, loadings
+  known up to an error of variance 0.02: without the term, FDP 43 % and ``\hat\lambda = 3.1``; with it, FDP 3 % and
+  ``\hat\lambda = 1.03``. On GTEx (confounded, 5 per group), the null residuals of the highest-expressed genes had
+  1.8 times the modelled variance; with the term, 1.2.
+- **Weak factors.** With 5 factors and 10 samples per group, the fit took 901 iterations without the
+  parameter-expanded step and 57 with it, and reached a slightly higher ELBO.
+- **Stopping rules.** A 100 times tighter tolerance changes s-values by at most 0.001 and no discovery.
 
 ## 7.4 Benchmark on thinned GTEx data
 
-Two-group experiments are simulated from GTEx v8 skeletal muscle by binomial thinning ([§6](simulation.md)): 2 000
-genes, 200 negative controls, 20 samples, 10 replicates per scenario. There are three scenarios:
+Two-group experiments are built from GTEx v8 skeletal muscle by binomial thinning ([§6](simulation.md)): 2 000
+genes, 200 negative controls, 5 or 10 samples per group, 10 data sets per scenario. Every method gets the same
+number of hidden factors, ``q = 2``.
 
-- **Balanced**: 20 % of the genes change, log₂ fold changes ``\sim \mathcal N(0, 0.8)``, random groups.
-- **Confounded**: the same effects, but the groups are correlated with two hidden factors of the samples (0.6 and
-  0.2).
-- **Global increase**: 60 % of the genes go up, log₂ fold changes ``\sim \mathcal N(1, 0.5)``, confounded. The
-  controls are exactly null, so the assumption of §4.2 holds by construction.
+- **Balanced**: 20 % of the genes change, log₂ fold changes ``\sim \mathcal N(0, 0.8)``; the groups are uncorrelated
+  with the two main factors (|ρ| ≤ 0.15).
+- **Confounded**: the same effects; the groups are correlated with the two main factors (0.6 and 0.2, ± 0.15).
+- **Global increase**: 60 % of the genes go up, log₂ fold changes ``\sim \mathcal N(1, 0.5)``, confounded as above.
 
-Two oracles give a reference. The first knows the confounding factors and the true normalisation. The second also
-knows the true distribution of the effects.
+The oracle knows the two factors and the true normalisation.
 
-![Benchmark on thinned GTEx muscle data](figures/benchmark.png)
+![Benchmark by number of samples per group](figures/sample_size.png)
 
-| scenario | PLNRUV EB (controls) | PLNRUV EB (sparsity) | oracle | DESeq2 | edgeR | limma-voom | vicar | spike-in CATE + DESeq2 |
-|---|---|---|---|---|---|---|---|---|
-| balanced | 4.5 % / 0.33 | 4.3 % / 0.32 | 4.9 % / 0.33 | 10.5 % / 0.31 | 5.0 % / 0.26 | 2.3 % / 0.25 | 9.6 % / 0.37 | 16.7 % / 0.42 |
-| confounded | 4.8 % / 0.23 | 3.4 % / 0.22 | 4.4 % / 0.22 | 45.4 % / 0.40 | 36.5 % / 0.34 | 29.7 % / 0.32 | 6.6 % / 0.26 | 41.7 % / 0.45 |
-| global increase | 5.1 % / 0.73 | 46.2 % / 0.45 | 4.5 % / 0.72 | 43.8 % / 0.41 | 39.9 % / 0.40 | 38.6 % / 0.40 | 43.3 % / 0.57 | 11.8 % / 0.73 |
+FDP / power, means over 10 data sets:
 
-FDP / power, means over 10 replicates.
+| scenario | per group | PLNRUV (controls) | PLNRUV (sparsity) | oracle | DESeq2 | edgeR | limma-voom | vicar | spike-in CATE |
+|---|---|---|---|---|---|---|---|---|---|
+| balanced | 5 | 4.5 % / 0.21 | 4.5 % / 0.20 | 6.3 % / 0.21 | 6.1 % / 0.16 | 0.2 % / 0.08 | 0.2 % / 0.08 | 18 % / 0.29 | 23 % / 0.35 |
+| balanced | 10 | 3.6 % / 0.34 | 2.7 % / 0.33 | 3.6 % / 0.35 | 5.7 % / 0.30 | 2.8 % / 0.24 | 1.2 % / 0.23 | 7.2 % / 0.39 | 13 % / 0.41 |
+| confounded | 5 | 4.2 % / 0.14 | 7.3 % / 0.14 | 7.3 % / 0.13 | 29 % / 0.22 | 7.8 % / 0.11 | 7.7 % / 0.12 | 22 % / 0.23 | 44 % / 0.39 |
+| confounded | 10 | 3.0 % / 0.26 | 3.9 % / 0.25 | 4.2 % / 0.28 | 33 % / 0.36 | 22 % / 0.30 | 15 % / 0.29 | 8.7 % / 0.31 | 31 % / 0.44 |
+| global increase | 5 | 5.1 % / 0.62 | 46 % / 0.31 | 4.9 % / 0.59 | 37 % / 0.25 | 29 % / 0.18 | 30 % / 0.16 | 42 % / 0.46 | 12 % / 0.65 |
+| global increase | 10 | 5.3 % / 0.75 | 47 % / 0.49 | 4.4 % / 0.77 | 42 % / 0.42 | 38 % / 0.40 | 38 % / 0.38 | 46 % / 0.68 | 8.4 % / 0.72 |
 
-- PLNRUV with controls is calibrated in all three scenarios, with the power of the oracles. With 20 samples,
-  estimating the confounders, the offset and the prior costs almost nothing.
-- PLNRUV without controls is calibrated when most genes do not change. It fails, as it must, when most genes go up
+What this shows:
+
+- PLNRUV with controls stays close to 5 % in all three scenarios, with the power of the oracle.
+- Without controls, PLNRUV is calibrated when most genes do not change, and fails, as expected, when most go up
   ([§1.3](problem.md)).
-- The standard pipelines are calibrated only without confounding. The higher power of CATE and of the spike-in
-  pipeline comes with an FDP of 12–42 %.
+- The standard pipelines lose control as soon as the groups are confounded. The higher power of CATE and of the
+  spike-in pipeline comes with a high FDP.
+- The Gaussian log-ratio branch ([§5.6](pln.md)) is calibrated at these sizes, with less power at 5 per group.
 
-**Misspecified controls.** The same confounded and global scenarios, but the 200 controls carry small effects:
-*noisy* controls, log₂ fold change ``\sim \mathcal N(0, 0.2)`` each, or *biased* controls, which shift together,
-``\sim \mathcal N(0.15, 0.05)``, as a spike-in whose amount follows the condition.
+**Misspecified controls.** The confounded and global scenarios again, 10 samples per group, but the 200 controls
+carry small effects: *noisy* controls, ``\mathcal N(0, 0.2)`` each, or *biased* controls, which shift together,
+``\mathcal N(0.15, 0.05)``.
 
 ![Benchmark with misspecified controls](figures/benchmark_controls.png)
 
-- **Noisy controls** are averaged out. PLNRUV with controls stays calibrated: 2.7 % (confounded) and 4.1 % (global).
-- **Biased controls** break every control-based method in the confounded scenario: PLNRUV 54 %, DESeq2 with control
-  size factors 56 %, the spike-in pipeline 53 %. A shared shift of the controls moves ``\hat\alpha_0``, and with it
-  every gene. The sparsity branch is not affected (4.8 %). In the global scenario PLNRUV with controls stays
-  calibrated (1.5 %), with less power (0.56 against 0.69).
+- **Noisy controls** average out: PLNRUV with controls stays at 2.1 % (confounded) and 3.8 % (global).
+- **Biased controls** break every control-based method in the confounded scenario: PLNRUV 60 %, DESeq2 with control
+  size factors 42 %, the spike-in pipeline 42 %. The sparsity branch is not affected (2.5 %). In the global scenario
+  PLNRUV with controls stays calibrated (1.2 %), with less power (0.58 against 0.74).
 
 Controls that move with the condition, even slightly, are the main threat to a control-based analysis
 ([§8](limits.md)).
 
-### Design choices of the empirical Bayes step
+**Smaller designs** (2 or 3 samples per group) are not reported yet. With so few samples a target confounding can
+only be reached on selected sets of samples ([§6.3](simulation.md)), and these results need another design.
 
-Same benchmark, PLNRUV with controls, 10 replicates.
+## 7.5 The PLN fit and the number of factors
 
-- **Additive inflation in the ``t`` likelihood** ([§4.4](empirical_bayes.md)). Scaling the ``t`` by ``\lambda`` gave
-  an FDP of 2.2 % in the confounded scenario. Adding the inflation as normal noise gives 5.0 %, with 15 % more
-  power. The balanced scenario stays at 4.5 %.
-- **Shifted prior for global changes** ([§4.2](empirical_bayes.md)). In the global scenario the prior centred at
-  zero estimates ``\hat\pi_0 \approx 0.22`` instead of 0.40, and the FDP is 8.3 %. With `mode = :auto` the FDP is
-  5.1 %, with slightly more power (0.73 against 0.70). The held-out gain that triggers the shifted prior is at most
-  0.003 per gene in the balanced scenario and 0.016 in the confounded one. It is 0.24–0.33 in the global scenario,
-  and 0.06–0.14 for a weaker global change (40 % of the genes, shift 0.5). So the gate at 0.05 never fires without a
-  global change.
-- **Expression-dependent variances** ([§4.5](empirical_bayes.md)). The PLN variance ``\sigma_j^2`` falls from about
-  0.45 for genes below 40 reads to about 0.06 above 2 500 reads, a slope of about ``-0.5`` on the log scale.
+**Variance prior and likelihood.** The same data sets (balanced, confounded, global; 5 data sets each), PLNRUV with
+controls, FDP / power:
 
-## 7.5 Few samples and the number of factors
+| scenario | per group | trend prior, ``t`` (default) | common prior | trend prior, normal likelihood | earlier fit |
+|---|---|---|---|---|---|
+| balanced | 5 | 4.8 % / 0.22 | 4.0 % / 0.18 | 11 % / 0.30 | 2.4 % / 0.12 |
+| balanced | 10 | 3.0 % / 0.35 | 2.5 % / 0.35 | 5.4 % / 0.39 | 2.6 % / 0.34 |
+| confounded | 5 | 2.3 % / 0.15 | 0.0 % / 0.11 | 10 % / 0.22 | 4.1 % / 0.10 |
+| confounded | 10 | 4.9 % / 0.28 | 3.6 % / 0.28 | 5.9 % / 0.30 | 5.0 % / 0.29 |
+| global increase | 5 | 4.7 % / 0.64 | 4.5 % / 0.63 | 5.5 % / 0.66 | 5.1 % / 0.65 |
+| global increase | 10 | 5.3 % / 0.77 | 5.2 % / 0.77 | 5.6 % / 0.78 | 5.1 % / 0.77 |
 
-**Choosing ``q`` by count splitting** ([§3.3](confounders.md)). PLN simulations with two true factors and 20 samples:
+- The trend prior gains power over the common prior, and stays calibrated.
+- The normal likelihood is anti-conservative with 5 samples per group: the ``t`` is needed there. With 10 per group
+  the ``t`` is slightly conservative.
+- The earlier fit (fixed scores and loadings, removed from the package) is calibrated here, with less power at 5
+  per group.
 
-- The binomial split chooses ``q = 4`` at mean counts around 20 and 150.
-- The iterated beta-binomial split chooses ``q = 2`` from mean counts of about 3 upwards, after 2–3 rounds.
-- Below a mean count of 1 it chooses ``q = 0``. There the latent noise cannot be identified, and ``q = 0`` is the
-  conservative choice.
+**Choosing ``q``** ([§3.3](confounders.md)). PLN simulations, 20 samples, 400 genes: `choose_q` returns the true
+number of factors for 0, 1, 2 and 3 factors, in one pass. On GTEx it chooses 1–4 factors at 5 per group and 3–5 at
+10 per group. With this ``q`` instead of ``q = 2``, PLNRUV with controls has an FDP of 6.9 % (5 per group) and 4.5 %
+(10 per group) in the confounded scenario, for the same power.
 
-**Calibration with few samples.** PLNRUV with controls, ``q`` chosen by `choose_q`, 10 replicates. FDP / power of
-the default fit and of the older fit ([§5.6](pln.md)), on the same data sets:
-
-| data | design | per group | default fit | older fit |
-|---|---|---|---|---|
-| thinned GTEx | balanced | 2 | 0 % / 0.000 | 65 % / 0.044 |
-| thinned GTEx | balanced | 3 | 0 % / 0.001 | 15 % / 0.044 |
-| thinned GTEx | balanced | 5 | 1.8 % / 0.094 | 2.8 % / 0.064 |
-| thinned GTEx | confounded | 2 | 45 % (one discovery) / 0.000 | 68 % / 0.016 |
-| thinned GTEx | confounded | 3 | 2.0 % / 0.001 | 22 % / 0.041 |
-| thinned GTEx | confounded | 5 | 6.1 % / 0.098 | 5.1 % / 0.055 |
-| PLN-exact simulation | balanced | 5 | 6.0 % / 0.091 | 4.2 % / 0.043 |
-| PLN-exact simulation | confounded | 5 | 11.4 % / 0.079 | 4.1 % / 0.035 |
-
-- With two or three samples per group, the default fit makes almost no discoveries. The older fit makes many, and
-  most of them are false.
-- With five samples per group on GTEx, the default fit is calibrated, with 50–80 % more power.
-- On the PLN-exact simulation with five samples per group, the default fit has an excess of false discoveries (11.4 ±
-  3.4 % in the confounded design). They come from low- and mid-expression genes; see below.
-- No fit failed. The default fit was 3–8 times faster.
-
-**Why the variances limit small samples.** With one or two residual degrees of freedom, each gene's variance rests
-almost entirely on the shrinkage prior. Both fits shrink all variances towards one scale. In the PLN-exact
-simulation, the variance falls with expression (from 0.45 to 0.06), so the variances of low-count genes are
-underestimated: the null ``z``-scores have a variance of about 1.4 in the low-expression third of the genes and 0.9 in
-the high-expression third, with either fit. On GTEx the variances scatter widely around their trend, and the effect
-is weaker. Real samples also differ in their overall variability, which the model does not describe.
-
-**Shrinking towards the trend does not fix it.** With `var_trend = true` (older fit), the null tails are corrected on PLN-exact
-data, where the variance is an exact function of the mean. On GTEx the FDP gets worse: 14.4 % instead of 1.9 % with
-five samples per group (balanced). Real genes scatter around the trend, and the trend pulls the genes with a truly
-high variance down.
+**Automatic relevance determination does not replace `choose_q`.** Given the largest possible bound on GTEx
+(confounded, 5 data sets), the fit kept 3–4 of 6 factors at 5 per group and 8–9 of 16 at 10 per group. The FDP rose
+from 4.9 % with ``q = 2`` to 7.0 % at 10 per group.

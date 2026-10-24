@@ -35,7 +35,7 @@ Every result about a global change of transcription depends on which assumption 
    number of factors.
 4. [**Empirical Bayes**](empirical_bayes.md). The prior on the effects, the joint estimation of the confounders, and
    the shrinkage of the variances.
-5. [**Fitting the PLN layer**](pln.md). The variational EM algorithm.
+5. [**Fitting the PLN layer**](pln.md). Variational empirical Bayes, and the Gaussian log-ratio alternative.
 6. [**Simulation by binomial thinning**](simulation.md). Realistic data with known effects.
 7. [**Validation**](validation.md). All the numerical results.
 8. [**Assumptions and limits**](limits.md). What can break the method, and how to interpret a global change.

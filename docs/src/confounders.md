@@ -65,13 +65,15 @@ samples. [`choose_q`](@ref) chooses ``q`` by **count splitting** (Neufeld et al.
 2. For each candidate ``q``, fit the PLN model on the training part.
 3. Score each fit by the likelihood of the test part, and keep the best ``q``.
 
-**The split must give independent parts.** The simple split keeps each read with probability ``\theta``:
-``y^{(1)} \sim \text{Binomial}(y, \theta)``. The two parts are then independent given the latent ``Z_{ij}``. But they
-share ``Z_{ij}``, and so its noise ``\varepsilon_{ij}``. When this noise dominates the Poisson noise, which is the
-case for counts above a few tens, a fit that has learned the noise also predicts the test part. Too many factors are
-chosen.
+**The split.** By default each read is kept in the training part with probability ``\theta``: ``y^{(1)} \sim
+\text{Binomial}(y, \theta)``. The two parts are independent given the latent ``Z_{ij}``, but they share ``Z_{ij}``, and
+so its noise ``\varepsilon_{ij}``. A fit that learns this noise is rewarded on the test part, and could choose too
+many factors. With the PLN fit of [§5](pln.md) this did not happen in simulations: the scores and loadings are
+random, factors that the data do not support are switched off, and the split finds the true number of factors in
+one pass ([§7.5](validation.md)).
 
-`choose_q` therefore splits by **beta-binomial thinning** (Neufeld, Dharamshi, Gao & Witten 2024):
+`split = :betabinomial` splits the latent noise too, by **beta-binomial thinning** (Neufeld, Dharamshi, Gao & Witten
+2024):
 
 ```math
 y^{(1)} \mid y \sim \text{BetaBinomial}\big(y;\; \theta r_j,\; (1 - \theta) r_j\big),
@@ -87,17 +89,17 @@ y^{(1)} \mid y \sim \text{BetaBinomial}\big(y;\; \theta r_j,\; (1 - \theta) r_j\
     v``, the inverse squared coefficient of variation of the rate. For a lognormal rate, ``v / m^2 = e^{\sigma_j^2}
     - 1``. The binomial split is the limit ``r \to \infty``. With ``r`` too small, ``v r - m^2 < 0``.
 
-The ``\sigma_j^2`` needed for the split come from a fit with the current choice of ``q``. The procedure starts at
+The ``\sigma_j^2`` needed for this split come from a fit with the current choice of ``q``. The procedure starts at
 ``q = 0``, whose ``\sigma_j^2`` include the variance of the factors (too large: the safe side). It repeats until the
-choice is stable.
+choice is stable. On real data it keeps fewer factors than the binomial split, and it is several times slower.
 
-With very few samples, a fit with factors can diverge on the training part. This happens when a gene has zero
-training counts in some samples: a loading can push these samples towards ``-\infty``. Such a ``q`` gets the score
-``-\infty``, and the choice moves towards ``q = 0``, which has no loadings.
+In the PLN fit ([§5.1](pln.md)), ``q`` is an upper bound: a factor whose loadings cannot be told apart from noise is
+switched off and removed during the fit. This does not replace `choose_q`. Real data have more weak structure than
+noise, so with a large ``q`` most factors are kept, and each one costs degrees of freedom ([§7.5](validation.md)).
 
-With the default fit ([§5.1](pln.md)), ``q`` is an upper bound: the factors that the data do not support are
-switched off and removed during the fit. Several values of ``q`` then give the same fit, and `choose_q` may return a
-larger ``q`` than the number of factors kept.
+The two work together. Above the number of factors the data support, a larger bound gives the same fit, and the
+scores of these bounds differ only by noise. `choose_q` therefore returns the number of factors kept by the fit at
+the chosen bound (`q`), and the bound itself (`qmax`).
 
 The keyword `ε` of `choose_q` is ``\theta``. Results are in [§7.5](validation.md).
 

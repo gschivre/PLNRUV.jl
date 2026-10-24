@@ -6,7 +6,7 @@ This is empirical Bayes. The package estimates three things this way:
 
 - the distribution of the effects (ash, §4.1–4.2);
 - the confounders, together with that distribution (MOUTHWASH, §4.3);
-- the distribution of the gene variances (limma or vash, §4.5).
+- the distribution of the gene variances (§4.5).
 
 ## 4.1 Adaptive shrinkage (ash)
 
@@ -93,8 +93,7 @@ The second sum is over the controls, whose prior is the point mass at zero. With
 ``g`` identifies ``\alpha`` (sparsity). With controls, ``\alpha`` is fitted on the controls only, by weighted least
 squares. This stays valid when most other genes change.
 
-The **variance inflation** ``\lambda`` absorbs what the standard errors miss, mainly the error in the estimated
-loadings ``\Gamma_j``.
+The **variance inflation** ``\lambda`` absorbs what the standard errors miss. It is a single factor for all genes.
 
 The maximisation alternates three steps:
 
@@ -110,6 +109,20 @@ The effects are then shrunk by ash, applied to the corrected estimates ``b_j - \
 **Uncertainty of ``\hat\alpha``.** The corrected estimates share the error of ``\hat\alpha``. Its variance is added
 to each gene: ``s_j^2 + \Gamma_j^\top V_\alpha \Gamma_j``, where ``V_\alpha`` is the covariance of ``\hat\alpha``
 (as in Wang et al. 2017). The grid of ``\tau_l`` is built from these standard errors.
+
+**Uncertainty of the loadings.** The loadings are estimated too. When the PLN fit provides their posterior
+covariance ``\text{Cov}(\Gamma_j)`` ([§5.5](pln.md)), MOUTHWASH uses it twice:
+
+- the correction ``\Gamma_j^\top\hat\alpha`` has the error variance ``\hat\alpha^\top \text{Cov}(\Gamma_j)\,
+  \hat\alpha``, added to the noise of gene ``j``;
+- ``\alpha`` is estimated with ``\mathbb E[\Gamma_j\Gamma_j^\top] = \Gamma_j\Gamma_j^\top + \text{Cov}(\Gamma_j)`` in
+  its normal equations (errors in variables). Along a factor that the loadings barely determine, ``\hat\alpha``
+  then stays small instead of growing without bound.
+
+``\lambda`` cannot replace this term. The term is zero without confounding (``\alpha \approx 0``). And it grows with
+the latent variance ``\sigma_j^2``, not with the Poisson noise, so it weighs most on highly expressed genes: a common
+factor ``\lambda`` gives them too little and the weakly expressed genes too much ([§7.3](validation.md)). The Gaussian
+[`mouthwash`](@ref) treats its loadings as exact.
 
 ## 4.4 The noise model
 
@@ -164,15 +177,15 @@ limma is the case of one component. A mixture can fit variances that are bimodal
 ``\omega_m`` are estimated by mix-SQP, and ``c`` by a one-dimensional search. The shrunk variance is ``\tilde\sigma_j^2
 = 1 / \mathbb E[\sigma_j^{-2} \mid \hat\sigma_j^2]``.
 
-The option `shrink_var = :vash` (default), `:limma` or `:none` applies to the Gaussian MOUTHWASH and to the older PLN
-fit ([§5.6](pln.md)). The default PLN fit puts the limma prior inside its own objective ([§5.1](pln.md)).
+**Where each prior is used.** The PLN fit puts the limma prior inside its own objective, with a scale that follows
+expression ([§5.4](pln.md)). The Gaussian [`mouthwash`](@ref) shrinks its variances after the factor analysis, with
+`shrink_var = :vash` (default), `:limma` or `:none`.
 
-**Variances that depend on expression.** Both priors pull every variance towards the same scale. But RNA-seq
-overdispersions decrease with expression: this is the mean–dispersion trend fitted by DESeq2 and edgeR. A common
-scale then shrinks the variances of low-count genes too much and those of high-count genes too little. With
-`var_trend = true`, the variances are shrunk around a cubic trend of ``\log \hat\sigma_j^2`` in the mean
-log-abundance of each gene (as in limma-trend, Law et al. 2014). This option is off by default: on real data it made
-calibration worse ([§7.5](validation.md)).
+**Variances that depend on expression.** A prior with one scale pulls every variance towards it. But RNA-seq
+variances depend on expression, so a common scale shrinks the variances of some genes too much and those of others
+too little. The PLN fit therefore uses a local trend by default (`var_prior = :trend`). In the Gaussian
+[`mouthwash`](@ref), `var_trend = true` shrinks the variances around a cubic trend of ``\log \hat\sigma_j^2`` in the
+mean of each gene (as in limma-trend, Law et al. 2014); it is off by default.
 
 ## Functions
 

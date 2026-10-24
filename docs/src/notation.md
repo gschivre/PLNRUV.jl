@@ -39,7 +39,10 @@ Each symbol has one meaning in the whole manual. Logarithms are natural; log₂ 
 | ``b_j``, ``s_j`` | raw (confounded) estimate of gene ``j`` and its standard error |
 | ``d`` | residual degrees of freedom, ``n - k - q - 1`` |
 | ``\hat\sigma_j^2``, ``\tilde\sigma_j^2`` | estimated and shrunk variances |
-| ``d_0``, ``\sigma_0^2`` | degrees of freedom and scale of the limma prior on the variances |
+| ``d_0``, ``\sigma_0^2`` | degrees of freedom and scale of the limma prior on the variances; in the PLN fit ``d_0 = 2a_0`` and the scale is a function ``\sigma_0^2(x_j)`` of expression |
+| ``x_j`` | mean log-abundance of gene ``j``, the covariate of the variance trend |
+| ``t_j`` | degrees of freedom used by the coefficients and loadings of gene ``j`` (``\approx k + q``) |
+| ``\text{Cov}(\Gamma_j)`` | posterior covariance of the loadings of gene ``j`` |
 | ``c``, ``a_m``, ``\omega_m`` | scale, shapes and weights of the vash prior on the variances |
 | ``g`` | prior distribution of the effects ``\beta_j`` (ash) |
 | ``\pi_l``, ``\tau_l`` | weights and standard deviations of its components; ``\tau_0 = 0`` is the point mass at zero |
@@ -88,11 +91,15 @@ Each symbol has one meaning in the whole manual. Logarithms are natural; log₂ 
 - Law C. W., Chen Y., Shi W. & Smyth G. K. (2014) voom: precision weights unlock linear model analysis tools for
   RNA-seq read counts. *Genome Biol.* 15, R29.
 - Lawson C. L. & Hanson R. J. (1974) *Solving Least Squares Problems*. Prentice-Hall.
+- Liu C., Rubin D. B. & Wu Y. N. (1998) Parameter expansion to accelerate EM: the PX-EM algorithm. *Biometrika* 85,
+  755–770.
 - Lovén J. et al. (2012) Revisiting global gene expression analysis. *Cell* 151, 476–482.
 - Lu M. & Stephens M. (2016) Variance adaptive shrinkage (vash): flexible empirical Bayesian estimation of variances.
   *Bioinformatics* 32, 3428–3434.
 - Lu M. & Stephens M. (2019) Empirical Bayes estimation of normal means, accounting for uncertainty in estimated
   standard errors. arXiv:1901.10679.
+- Morgan K. L. & Rubin D. B. (2012) Rerandomization to improve covariate balance in experiments. *Ann. Stat.* 40,
+  1263–1282.
 - Neufeld A., Dharamshi A., Gao L. L. & Witten D. (2024) Data thinning for convolution-closed distributions.
   *J. Mach. Learn. Res.* 25(57), 1–35.
 - Neufeld A., Gao L. L., Popp J., Battle A. & Witten D. (2024) Inference after latent variable estimation for
@@ -101,6 +108,8 @@ Each symbol has one meaning in the whole manual. Logarithms are natural; log₂ 
 - Pirrello J. et al. (2018) Transcriptome profiling of sorted endoreduplicated nuclei from tomato fruits: how the
   global shift in expression ascribed to DNA ploidy influences RNA-Seq data normalization and interpretation.
   *Plant J.* 93, 387–398.
+- Qi Y. & Jaakkola T. S. (2007) Parameter expanded variational Bayesian methods. *Adv. Neural Inf. Process. Syst.*
+  19, 1097–1104.
 - Quinn T. P. et al. (2018) Understanding sequencing data as compositions: an outlook and review. *Bioinformatics* 34,
   2870–2878.
 - Schivre G. et al. (2025) Genome-scale transcriptome augmentation during *Arabidopsis thaliana* photomorphogenesis.

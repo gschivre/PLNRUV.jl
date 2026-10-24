@@ -95,5 +95,5 @@ on real data.
 
 ## Functions
 
-- [`pln`](@ref): fit the PLN layer.
+- [`plnpca`](@ref): fit the PLN layer.
 - [`pln_mouthwash`](@ref): the two stages together.
