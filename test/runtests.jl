@@ -1,4 +1,4 @@
-using PLNRUV, Aqua, Test, Random, Distributions, Statistics
+using PLNRUV, Aqua, Test, Random, Distributions, Statistics, StatsModels
 
 @testset "PLNRUV" begin
     @testset "filter_genes" begin
@@ -223,7 +223,7 @@ using PLNRUV, Aqua, Test, Random, Distributions, Statistics
         Y = [rand(rng, Poisson(exp(o[i] + A[i, j]))) for i in 1:n, j in 1:p]
         fit = pln_mouthwash(Y, X, 0; controls = 1:c)
         mw = fit.mouthwash
-        nc = (c + 1):p
+        nc = setdiff((c + 1):p, mw.separated) #genes with no count in a group are not tested
         @test fit.pln.converged
         @test mw.converged
         @test 0.7 < mw.λ < 1.5 #the latent-scale standard errors need little inflation
@@ -341,6 +341,66 @@ using PLNRUV, Aqua, Test, Random, Distributions, Statistics
             r = PLNRUV.plnpca_run(Y, X, 0; var_prior = vp)
             @test r.converged && 1.3 < r.priors.a0 < 3
         end
+    end
+
+    @testset "genes with an effect that cannot be estimated" begin
+        #a gene with no count in a whole group, level or time point has no finite estimate: it is detected, left out of
+        #the fit and reported without estimate
+        X3 = [ones(9) repeat([0.0, 1.0, 0.0], 3) repeat([0.0, 0.0, 1.0], 3)] #three levels
+        Y3 = fill(5, 9, 4)
+        Y3[X3[:, 3] .== 1, 2] .= 0 #no count in the third level
+        Y3[:, 3] .= 0 #no count at all
+        Y3[1, 4] = 0 #one zero only: still estimable
+        @test PLNRUV.separated_genes(Y3, X3) == [false, true, true, false]
+        rng = Xoshiro(17)
+        n, p, c = 10, 300, 40
+        X = [ones(n) repeat([0.0, 1.0], inner = n ÷ 2)]
+        σ = 0.4 .* exp.(0.25 .* randn(rng, p))
+        Z = (randn(rng, p) .+ 3)' .+ randn(rng, n, p) .* σ'
+        Y = [rand(rng, Poisson(exp(Z[i, j]))) for i in 1:n, j in 1:p]
+        Y[X[:, 2] .== 1, (c + 1):(c + 10)] .= 0
+        fit = pln_mouthwash(Y, X, 0; controls = 1:c)
+        mw = fit.mouthwash
+        @test mw.separated == collect((c + 1):(c + 10))
+        @test all(isnan, mw.mean[mw.separated]) && all(isnan, mw.svalue[mw.separated])
+        @test all(isfinite, mw.mean[setdiff(1:p, mw.separated)]) && fit.tested == setdiff(1:p, mw.separated)
+        @test mw.controls == collect(1:c) && fit.pln.converged
+        @test occursin("not tested", sprint(show, MIME"text/plain"(), mw))
+    end
+
+    @testset "contrasts" begin
+        @test contrast_vector(["(Intercept)", "time: 2h", "time: 6h"], ["time: 6h" => 1, "time: 2h" => -1]) == [0, -1, 1]
+        @test contrast_vector(["(Intercept)", "treated"], "treated") == [0, 1]
+        @test_throws ArgumentError contrast_vector(["(Intercept)", "treated"], "time")
+        rng = Xoshiro(18)
+        n, p, c = 12, 300, 40
+        g = repeat([0.0, 1.0, 2.0], 4) #three levels
+        β = [zeros(c); (rand(rng, p - c) .< 0.3) .* randn(rng, p - c)]
+        σ = 0.4 .* exp.(0.25 .* randn(rng, p))
+        Z = (randn(rng, p) .+ 3)' .+ (g .== 2) .* β' .+ randn(rng, n, p) .* σ'
+        Y = [rand(rng, Poisson(exp(Z[i, j]))) for i in 1:n, j in 1:p]
+        #the same comparison, level 2 against level 0, in two codings: the same fit and the same answer
+        Xt = [ones(n) g .== 1 g .== 2] #treatment coding: the third coefficient is the comparison
+        Xc = [g .== 0 g .== 1 g .== 2] #cell means: the contrast (-1, 0, 1)
+        a = pln_mouthwash(Y, Xt, 0; controls = 1:c).mouthwash
+        b = pln_mouthwash(Y, Xc, 0; controls = 1:c, contrast = [-1, 0, 1]).mouthwash
+        @test a.separated == b.separated #which genes can be tested does not depend on the coding either
+        t = setdiff(1:p, a.separated)
+        @test maximum(abs, a.mean[t] .- b.mean[t]) < 1.0e-3 && maximum(abs, a.svalue[t] .- b.svalue[t]) < 1.0e-3
+        #several contrasts from one fit, and one more afterwards
+        C = [0 0; 1 0; 0 1]
+        r = pln_mouthwash(Y, Xt, 0; controls = 1:c, contrast = C)
+        @test length(r.mouthwash) == 2 && isequal(r.mouthwash[2].mean, a.mean)
+        dc = test_contrast(r, Xt, [0, -1, 1]; controls = 1:c)
+        @test isequal(dc.mean, pln_mouthwash(Y, Xt, 0; controls = 1:c, contrast = [0, -1, 1]).mouthwash.mean)
+        @test_throws DimensionMismatch test_contrast(r, Xt, [0, 1]; controls = 1:c)
+        #formulas (StatsModels extension): the same design and contrast by names
+        samples = (level = ["a", "b", "c"][Int.(g) .+ 1],)
+        dm = design_matrix(@formula(0 ~ level), samples)
+        @test dm.names == ["(Intercept)", "level: b", "level: c"] && dm.X == Xt
+        fm = pln_mouthwash(Y, @formula(0 ~ level), samples, 0; controls = 1:c, contrast = ["level: c" => 1, "level: b" => -1])
+        @test isequal(fm.mouthwash.mean, dc.mean) && fm.coefnames == dm.names
+        @test length(pln_mouthwash(Y, @formula(0 ~ level), samples, 0; controls = 1:c, contrast = ["level: b", "level: c"]).mouthwash) == 2
     end
 
     @testset "MOUTHWASH: uncertainty of the loadings" begin

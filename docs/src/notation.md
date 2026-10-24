@@ -12,7 +12,9 @@ Each symbol has one meaning in the whole manual. Logarithms are natural; log₂ 
 | ``j = 1, \dots, p`` | genes |
 | ``y_{ij}`` | read count of gene ``j`` in sample ``i`` |
 | ``N_i``, ``o_i`` | library size of sample ``i`` and the offset ``o_i = \log N_i`` |
-| ``X``, ``x_i`` | design matrix (``n \times k``, intercept first, covariate of interest last) and its row ``i`` |
+| ``X``, ``x_i`` | design matrix (``n \times k``, intercept first) and its row ``i`` |
+| ``c`` | the contrast tested, ``c^\top B_j`` (default: the last coefficient) |
+| ``a`` | weights of the raw estimate, ``a = X (X^\top X)^{-1} c`` |
 | ``C`` | the set of negative control genes |
 
 **Model**
@@ -28,14 +30,14 @@ Each symbol has one meaning in the whole manual. Logarithms are natural; log₂ 
 | ``q`` | number of free hidden factors |
 | ``w_i`` | factors of sample ``i``: the offset factor ``w_{i0}`` (a shift common to all genes), then the ``q`` hidden factors |
 | ``\Gamma_j`` | loadings of gene ``j`` on the factors (``q + 1`` values); ``\Gamma_{0j} = 1`` for the offset factor |
-| ``\alpha``, ``\alpha_0`` | association of the factors with the covariate of interest (``q + 1`` values); ``\alpha_0`` is the compositional shift |
+| ``\alpha``, ``\alpha_0`` | association of the factors with the contrast tested (``q + 1`` values); ``\alpha_0`` is the compositional shift |
 
 **Estimation**
 
 | symbol | meaning |
 |---|---|
 | ``Q``, ``R`` | QR decomposition of the design, ``X = QR`` |
-| ``u``, ``R_{kk}`` | the column of ``Q`` and the diagonal entry of ``R`` for the covariate of interest |
+| ``u``, ``R_{kk}`` | the last column of ``Q`` and the last diagonal entry of ``R``; ``a = u / R_{kk}`` for the last coefficient |
 | ``b_j``, ``s_j`` | raw (confounded) estimate of gene ``j`` and its standard error |
 | ``d`` | residual degrees of freedom, ``n - k - q - 1`` |
 | ``\hat\sigma_j^2``, ``\tilde\sigma_j^2`` | estimated and shrunk variances |

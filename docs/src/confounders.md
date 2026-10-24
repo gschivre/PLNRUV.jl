@@ -14,8 +14,9 @@ where ``W`` is the ``n \times (q + 1)`` matrix of factors, offset factor first, 
 
 ## 3.1 The rotation
 
-The covariate of interest is the last column of ``X``. Write the QR decomposition ``X = QR``: ``Q`` is an ``n \times
-n`` orthogonal matrix and ``R`` is upper triangular. Rotate the data: ``\tilde Y = Q^\top Y``. The noise of the
+Take the effect tested as the last column of ``X``; any contrast can be put there by recoding the design
+([§5.6](pln.md)). Write the QR decomposition ``X = QR``: ``Q`` is an ``n \times n`` orthogonal matrix and ``R`` is
+upper triangular. Rotate the data: ``\tilde Y = Q^\top Y``. The noise of the
 rotated data is still ``\mathcal N(0, \sigma_j^2 I_n)``, because ``Q`` is orthogonal. The rows of ``\tilde Y`` form
 three blocks (Wang et al. 2017):
 

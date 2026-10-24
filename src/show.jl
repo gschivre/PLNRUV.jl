@@ -17,11 +17,12 @@ Base.show(io::IO, fit::MouthwashFit) = print(io, "MouthwashFit(", length(fit.mea
 
 function Base.show(io::IO, ::MIME"text/plain", fit::MouthwashFit; ntop::Integer = 10, level::Real = 0.05)
     p = length(fit.mean)
-    est = setdiff(1:p, fit.controls)
+    est = setdiff(1:p, fit.controls, fit.separated)
     printstyled(io, "Empirical Bayes fit (MOUTHWASH)"; bold = true)
     println(io)
     fit.converged || printstyled(io, "  not converged: increase maxiter or check the data\n"; color = :yellow)
     println(io, "  ", p, " genes (", length(fit.controls), " controls", isempty(fit.controls) ? ": confounders identified by sparsity" : "", ")")
+    isempty(fit.separated) || println(io, "  ", length(fit.separated), " genes not tested: no counts in some group, level or time point, so some effect cannot be estimated")
     println(io, "  Confounders   α = [", join(fmt_x.(fit.α, 3), ", "), "] (first: compositional offset, if fitted) · variance inflation λ = ", fmt_x(fit.λ, 2))
     centre = fit.g.mode == 0 ? "" : string(", centred at the mode ", fmt_x(fit.g.mode, 3), " (shared shift of the non-null genes)")
     println(io, "  Effect prior  π₀ = ", fmt_x(fit.g.π[1], 3), " (proportion of null genes) over a grid of ", length(fit.g.σ), " scales", centre)

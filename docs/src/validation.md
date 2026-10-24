@@ -96,7 +96,7 @@ What this shows:
   ([§1.3](problem.md)).
 - The standard pipelines lose control as soon as the groups are confounded. The higher power of CATE and of the
   spike-in pipeline comes with a high FDP.
-- The Gaussian log-ratio branch ([§5.6](pln.md)) is calibrated at these sizes, with less power at 5 per group.
+- The Gaussian log-ratio branch ([§5.7](pln.md)) is calibrated at these sizes, with less power at 5 per group.
 
 **Misspecified controls.** The confounded and global scenarios again, 10 samples per group, but the 200 controls
 carry small effects: *noisy* controls, ``\mathcal N(0, 0.2)`` each, or *biased* controls, which shift together,

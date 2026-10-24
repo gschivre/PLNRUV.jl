@@ -11,7 +11,8 @@
 | controls are truly null | [§2.3](model.md) | controls that shift with the condition, even slightly | compare with the sparsity branch; test with `ctrl_signal` ([§7.4](validation.md)) |
 | or: most effects are zero | [§4.1](empirical_bayes.md) | a global change of transcription | use controls |
 | a global change multiplies all genes equally | [§1.5](problem.md) | a change that favours some genes | read the gene effects as relative to the common part |
-| one covariate of interest | [§3.1](confounders.md) | several contrasts | run once per contrast |
+| one contrast at a time | [§5.6](pln.md) | a question about several coefficients at once ("any change over time") | test the contrasts one by one |
+| every coefficient estimable | [§5.6](pln.md) | a gene with no count in a group, level or time point | it is reported as not tested |
 | confounders are plugged in | [§4.3](empirical_bayes.md) | weak factors, very few samples; loadings plugged in by the Gaussian branch | see §8.4 |
 
 ## 8.2 What the reads cannot tell
@@ -67,6 +68,6 @@ discoveries as candidates to confirm.
 
 ## 8.5 The Gaussian branch
 
-The Gaussian [`mouthwash`](@ref) on log-ratios ([§5.6](pln.md)) does not model the Poisson noise, distorts low counts
-through the pseudocount, and treats the loadings as exact. Prefer the PLN fit at low depth and in confounded designs
+The Gaussian [`mouthwash`](@ref) on log-ratios ([§5.7](pln.md)) does not model the Poisson noise, distorts low counts
+through the pseudocount, treats the loadings as exact, and tests one column of the design (no contrasts yet). Prefer the PLN fit at low depth and in confounded designs
 with few samples.

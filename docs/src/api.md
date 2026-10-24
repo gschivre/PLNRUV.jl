@@ -20,6 +20,9 @@ log_ratio
 
 ```@docs
 pln_mouthwash
+test_contrast
+contrast_vector
+design_matrix
 plnpca
 mouthwash
 factor_analysis

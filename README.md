@@ -89,6 +89,17 @@ res.svalue   # report the genes with svalue < 0.05
 fit_sparse = pln_mouthwash(counts, X, q)                 # without controls: sparsity identifies the confounders
 ```
 
+Any design and any contrast, with a formula on a table of samples:
+
+```julia
+using PLNRUV, StatsModels
+
+q = choose_q(counts, @formula(0 ~ genotype * time), samples).q
+fit = pln_mouthwash(counts, @formula(0 ~ genotype * time), samples, q; controls,
+                    contrast = ["time: 6h" => 1, "time: 2h" => -1])   # 6 h against 2 h
+fit.coefnames                                                         # the names a contrast can use
+```
+
 ## Simulating realistic data
 
 `thin_2group` creates two-group experiments with known effects from real counts, by binomial thinning (Gerard 2020).

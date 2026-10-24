@@ -63,7 +63,7 @@ The method pages contain no benchmark numbers. All numbers are on the [validatio
 using PLNRUV
 
 # counts: integer matrix, samples x genes
-# X: design matrix with an intercept first and the covariate of interest last
+# X: design matrix with an intercept first; the last column is tested (or give a contrast, §5.6)
 # controls: indices of negative control genes (optional)
 q = choose_q(counts, X).q                               # number of hidden factors
 fit = pln_mouthwash(counts, X, q; controls = controls)  # q factors + the offset factor
@@ -76,4 +76,9 @@ res.converged # false if the fit stopped at maxiter
 
 # without controls, sparsity identifies the confounders; α₀ is then only defined relative to the bulk of genes
 fit_sparse = pln_mouthwash(counts, X, q)
+
+# any design and any contrast, with a formula on a table of samples (needs StatsModels)
+using StatsModels
+fit = pln_mouthwash(counts, @formula(0 ~ genotype * time), samples, q; controls,
+                    contrast = ["time: 6h" => 1, "time: 2h" => -1])
 ```

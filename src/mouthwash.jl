@@ -204,6 +204,7 @@ struct MouthwashFit
     qvalue::Vector{Float64}
     evalue::Vector{Float64} #compound e-values (use with ebh for FDR control under dependence)
     controls::Vector{Int}
+    separated::Vector{Int} #genes not tested: some coefficient of the design cannot be estimated (no estimate, NaN)
     converged::Bool #relative change of the objective below tol before maxiter
 end
 
@@ -245,6 +246,6 @@ function mouthwash(
     )
     return MouthwashFit(
         β̃, s, fit.α, fit.λ, fit.g, fit.loglik, fit.mean, fit.sd, fit.lfsr, fit.lfdr,
-        cumulative_rate(fit.lfsr), cumulative_rate(fit.lfdr), fit.evalue, collect(controls), fit.converged,
+        cumulative_rate(fit.lfsr), cumulative_rate(fit.lfdr), fit.evalue, collect(controls), Int[], fit.converged,
     )
 end

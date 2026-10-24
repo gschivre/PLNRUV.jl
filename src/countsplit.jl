@@ -71,12 +71,15 @@ function choose_q(
     @assert split in (:betabinomial, :binomial) "split must be :betabinomial or :binomial"
     n, k = size(X)
     qs = [q for q in qs if n - k > q + Int(offset_factor)]
+    #genes with an effect that cannot be estimated (no counts in some group) are left out, as in pln_mouthwash
+    Y = Y[:, findall(!, separated_genes(Y, X))]
     function scores(r)
         score = zeros(length(qs))
         for _ in 1:nsplit
             Ytrain, Ytest = split_counts(rng, Y, r, ε)
-            #drop the genes with no training count in any sample (no information to fit them)
-            keep = vec(sum(Ytrain; dims = 1)) .> 0
+            #drop the genes that the training part leaves without information on some coefficient (a gene can lose
+            #all its counts of a group in the split)
+            keep = findall(!, separated_genes(Ytrain, X))
             Ytr, Yte = Ytrain[:, keep], Ytest[:, keep]
             otr = vec(log.(sum(Ytr; dims = 2)))
             ote = vec(log.(sum(Yte; dims = 2)))

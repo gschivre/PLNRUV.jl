@@ -10,6 +10,12 @@ Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 SpecialFunctions = "276daf66-3868-5448-9aa4-cd146d93841b"
 Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 
+[weakdeps]
+StatsModels = "3eaba693-59b7-5ba5-a881-562e759f1c8d"
+
+[extensions]
+PLNRUVStatsModelsExt = "StatsModels"
+
 [compat]
 Aqua = "0.8"
 Distributions = "0.25"
@@ -17,12 +23,14 @@ LinearAlgebra = "1"
 Random = "1"
 SpecialFunctions = "2.9.1"
 Statistics = "1"
+StatsModels = "0.7"
 Test = "1"
 julia = "1.10"
 
 [extras]
 Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
+StatsModels = "3eaba693-59b7-5ba5-a881-562e759f1c8d"
 Test = "8dfed614-e22c-5e3e-841a-fef0934d6dd3"
 
 [targets]
-test = ["Aqua", "Test"]
+test = ["Aqua", "StatsModels", "Test"]

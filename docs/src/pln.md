@@ -21,8 +21,8 @@ random, with priors estimated from all genes. This is variational empirical Baye
   as in the rotation of [§3](confounders.md). A factor therefore cannot absorb the effects of interest.
 - **Loadings.** ``\Gamma_{lj} \sim \mathcal N(0, \tau_l^2)``, with one variance per factor. A factor that the data do
   not support gets ``\tau_l^2 \to 0`` and is switched off (automatic relevance determination).
-- **Coefficients.** ``B_j`` has a weak normal prior. It keeps the estimates finite for genes that are zero in a whole
-  group.
+- **Coefficients.** ``B_j`` has a flat prior: the data alone determine it, and the fit does not depend on how the
+  design is coded. Its uncertainty is kept, which matters for the variances (§5.4).
 - **Variances.** ``\sigma_j^2 \sim \text{InvGamma}(a_0,\, a_0 \sigma_0^2(x_j))``, the limma prior with ``d_0 = 2a_0``
   ([§4.5](empirical_bayes.md)), whose scale ``\sigma_0^2`` is a smooth function of the mean log-abundance ``x_j`` of
   gene ``j`` (§5.4).
@@ -116,14 +116,15 @@ may then stop at `maxiter` with `converged = false`. Real data are far from this
 
 ## 5.5 From the PLN fit to MOUTHWASH
 
-The raw estimate of each gene is the rotated row of interest of ``M``: ``b_j = u^\top M_{\cdot j} / R_{kk}``, where
-``u`` is the column ``k`` of ``Q``.
+The effect tested is a contrast ``c^\top B_j``: by default the last coefficient, or any combination of them (§5.6).
+Its raw estimate is a weighted sum of the latent values, ``b_j = a^\top M_{\cdot j}`` with ``a = X (X^\top X)^{-1} c``.
+For the last coefficient, ``a`` is the last column of ``Q`` divided by ``R_{kk}``.
 
 Its standard error uses the model's variance of each count on the latent scale: the biological variance plus the
 Poisson noise, ``\sigma_j^2 + 1/\bar y_{ij}``:
 
 ```math
-s_j = \frac{1}{\lvert R_{kk}\rvert}\sqrt{\sum_i u_i^2\, \big(\sigma_j^2 + 1/\bar y_{ij}\big)} .
+s_j = \sqrt{\sum_i a_i^2\, \big(\sigma_j^2 + 1/\bar y_{ij}\big)} .
 ```
 
 The spread of the residual rows of ``M`` cannot be used instead: the fit pulls them towards the factors, so their
@@ -134,7 +135,33 @@ MOUTHWASH uses it: the correction ``\Gamma_j^\top\alpha`` has the error variance
 \text{Cov}(\Gamma_j)\,\alpha``, which is added to the noise of the gene ([§4.3](empirical_bayes.md)). The estimates
 ``b_j``, their standard errors, the loadings and their covariances then go into MOUTHWASH.
 
-## 5.6 Without the PLN layer: Gaussian log-ratios
+## 5.6 Designs and contrasts
+
+Any design works: several groups, time points, interactions, covariates. Write it as a formula, then ask questions
+as contrasts:
+
+```julia
+using PLNRUV, StatsModels
+samples = (genotype = ["wt", "wt", "mut", "mut", ...], time = ["0h", "2h", "0h", "2h", ...])
+res = pln_mouthwash(counts, @formula(0 ~ genotype * time), samples, q; controls,
+                    contrast = ["genotype: wt & time: 2h" => 1])   # does the time effect differ between genotypes?
+res.coefnames                                                      # the names you can use in a contrast
+```
+
+- **A contrast** is a coefficient name, or names with weights: `["time: 6h" => 1, "time: 2h" => -1]` compares two
+  time points. With a design matrix built by hand, give a vector of weights instead.
+- **Several contrasts** at once: give a list, and `res.mouthwash` holds one result per contrast. The PLN fit does not
+  depend on the contrast, so it is done once. [`test_contrast`](@ref) adds another contrast later in seconds.
+- **The answer does not depend on how you code the design.** Treatment coding or one mean per group give the same
+  result for the same question.
+- **Each contrast gets its own confounder correction,** including its own compositional shift ``\alpha_0``.
+
+**Genes that cannot be tested.** A gene with no count in a whole group, level or time point has no finite estimate:
+the data are compatible with any large enough change. Such genes are left out of the fit and reported as not tested,
+in `res.mouthwash.separated`, with no estimate. Often the direction is obvious, but its size and reliability are
+not: look at these genes directly.
+
+## 5.7 Without the PLN layer: Gaussian log-ratios
 
 [`log_ratio`](@ref) followed by the Gaussian [`mouthwash`](@ref) is a lighter alternative. The counts are turned into
 log-ratios, ``\log(y_{ij} + 0.5)`` minus the mean over a set of reference genes (all genes, or the controls), and
@@ -154,4 +181,5 @@ It is fast and works well when counts are high. Its limits:
 
 - [`plnpca`](@ref): the PLN fit.
 - [`pln_mouthwash`](@ref): the PLN fit followed by MOUTHWASH.
+- [`test_contrast`](@ref), [`contrast_vector`](@ref), [`design_matrix`](@ref): contrasts and designs.
 - [`log_ratio`](@ref), [`mouthwash`](@ref): the Gaussian branch.

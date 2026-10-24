@@ -1,6 +1,6 @@
 #Poisson-lognormal factor model fitted by variational empirical Bayes, the PLN layer of pln_mouthwash and choose_q
 #    yᵢⱼ | Zᵢⱼ ~ Poisson(exp(oᵢ + Zᵢⱼ)),   Zᵢⱼ | ... ~ N(xᵢ'Bⱼ + ℓᵢ + uᵢ'Γⱼ, σⱼ²)
-#    U = Q₂V,   Vᵣ ~ N(0, I_q),   Γⱼₗ ~ N(0, τₗ²),   Bⱼ ~ N(b̄, τB² I),   σⱼ² ~ InvGamma(a0, a0 h(xⱼ))
+#    U = Q₂V,   Vᵣ ~ N(0, I_q),   Γⱼₗ ~ N(0, τₗ²),   Bⱼ flat,   σⱼ² ~ InvGamma(a0, a0 h(xⱼ))
 #the scores U (rows uᵢ) live in the residual space of X, spanned by the n - k orthonormal columns of Q₂, as the
 #residual rows of the CATE rotation: the loadings are learned from the variation that the design cannot explain, and
 #the factors cannot absorb the effects of interest
@@ -10,7 +10,9 @@
 #Gaussian factor model: every update is conjugate and exact, so the ELBO increases at every step. The expected squared residual seen by σⱼ² includes the uncertainty of Bⱼ, Γⱼ and uᵢ,
 #which gives the REML-type divisor (n - k - q, in the linear Gaussian model) instead of n
 #hyperparameters (τₗ², a0, h) are estimated from all genes at every sweep (empirical Bayes; one prior variance per
-#factor: automatic relevance determination); b̄ and τB are fixed (b̄ the median of the initial coefficients)
+#factor: automatic relevance determination); the coefficients have a flat prior, so the fit does not depend on how
+#the design is coded, and q(Bⱼ) keeps their uncertainty (the REML-type correction of the variances); genes whose
+#coefficients the counts do not determine (a group without any count) are left out before the fit (separated_genes)
 #h is the prior scale of the variances as a smooth function of the mean log-abundance xⱼ of each gene (fixed at its
 #initial value): genes are shrunk towards genes of similar expression; on GTEx the variances follow a U-shaped trend
 #in expression, which no monotone parametric curve (such as the dispersion trend of DESeq2) follows, so h is a local
@@ -32,8 +34,6 @@ mutable struct PLNPCAState
 end
 
 mutable struct PLNPCAPriors
-    b̄::Vector{Float64}
-    τB::Float64
     τ2::Vector{Float64}
     a0::Float64
     b0::Vector{Float64} #a0 h(xⱼ), the rate of the prior of each σⱼ²
@@ -91,7 +91,8 @@ function plnpca_elbo(st, Y, X, o, pr::PLNPCAPriors)
         elbo -= 0.5 * (sum(st.h) * (tr(st.S) - q - logdet(st.S)) + sum(abs2, st.m))
         elbo -= sum(kl_gauss(view(st.g, :, j), st.G[j], zeros(q), pr.τ2) for j in 1:p)
     end
-    elbo -= sum(kl_gauss(view(st.β, :, j), st.V[j], pr.b̄, fill(pr.τB^2, k)) for j in 1:p)
+    #coefficients: the entropy of q(Bⱼ) (the flat prior is constant)
+    elbo += 0.5 * sum(logdet(st.V[j]) for j in 1:p)
     for j in 1:p #E[log p(σⱼ²)] + entropy of q(σⱼ²)
         elbo += pr.a0 * log(pr.b0[j]) - loggamma(pr.a0) - (pr.a0 + 1) * lσ[j] - pr.b0[j] * w[j] +
             st.a[j] + log(st.b[j]) + loggamma(st.a[j]) - (1 + st.a[j]) * digamma(st.a[j])
@@ -111,16 +112,16 @@ function plnpca_cells!(st, Y, X, o)
     return st
 end
 
-#coefficients: q(Bⱼ) Gaussian, precision wⱼ X'X + I / τB², mean from the residual Mⱼ - ℓ - m gⱼ
+#coefficients: q(Bⱼ) Gaussian, precision wⱼ X'X (flat prior), mean from the residual Mⱼ - ℓ - m gⱼ
 function plnpca_coefficients!(st, X, pr)
     w = invσ2(st)
     XtX = X' * X
     k = size(X, 2)
     R = st.M .- st.ℓ .- st.m * st.g
     for j in axes(st.M, 2)
-        V = inv(Symmetric(w[j] .* XtX + I(k) ./ pr.τB^2))
+        V = inv(Symmetric(w[j] .* XtX))
         st.V[j] = Matrix(V)
-        st.β[:, j] = V * (w[j] .* (X' * view(R, :, j)) .+ pr.b̄ ./ pr.τB^2)
+        st.β[:, j] = V * (w[j] .* (X' * view(R, :, j)))
     end
     return st
 end
@@ -357,12 +358,13 @@ function plnpca_add_factor(st, pr, X)
 end
 
 """
-    plnpca(Y, X, q; offsets = log library sizes, offset_factor = true, τB = 5, var_prior = :trend, span = 0.2,
+    plnpca(Y, X, q; offsets = log library sizes, offset_factor = true, var_prior = :trend, span = 0.2,
            maxiter = 1000, tol = 1e-7, prune = 1e-3)
 
 Poisson-lognormal factor model fitted by variational empirical Bayes: counts Y (samples x genes), design X and q
-latent factors, with random factor scores in the residual space of X, random loadings, random coefficients (whose
-uncertainty gives the overdispersions a REML-type correction) and an inverse-gamma prior on the overdispersions,
+latent factors, with random factor scores in the residual space of X, random loadings, coefficients with a flat
+prior (their uncertainty gives the overdispersions a REML-type correction) and an inverse-gamma prior on the
+overdispersions,
 whose scale follows the mean log-abundance of the genes (var_prior = :trend, a local fit over a fraction span of the
 genes; :common for a single scale, which shrinks the variances of weakly and of highly expressed genes towards the
 middle); every update is exact and the ELBO increases at every sweep; the loadings have one prior variance per
@@ -371,7 +373,8 @@ prior variance falls below prune times the median variance is removed (q is an u
 and the fit stops when the ELBO changes by less than tol per count (gene in a sample)
 return a PLNFit (σ2 = 1 / E[1 / σⱼ²], df = 2a0 + n - tⱼ as for a variance shrunk by limma, tⱼ ≈ k + q the degrees
 of freedom used by the coefficients and loadings of gene j, Γcov the posterior covariance of the loadings); the fit
-of pln_mouthwash and choose_q
+of pln_mouthwash and choose_q, which leave out beforehand the genes whose coefficients the counts do not determine
+(separated_genes): with the flat prior their coefficients would diverge
 on very sparse counts, or low counts with nearly equal variances (complete pooling), the variances approach their value
 slowly from above and the fit may stop at maxiter (converged = false), with overestimated, conservative variances
 """
@@ -394,7 +397,7 @@ end
 #the fit itself: the variational state and the hyperparameters (prior variance of each factor in priors.τ2)
 function plnpca_run(
         Y::AbstractMatrix{<:Integer}, X::AbstractMatrix{<:Real}, q::Integer;
-        offsets::AbstractVector{<:Real} = vec(log.(sum(Y; dims = 2))), offset_factor::Bool = true, τB::Real = 5.0,
+        offsets::AbstractVector{<:Real} = vec(log.(sum(Y; dims = 2))), offset_factor::Bool = true,
         var_prior::Symbol = :trend, span::Real = 0.2, maxiter::Integer = 1000, tol::Real = 1.0e-7, prune::Real = 1.0e-3,
         init = nothing
     )
@@ -427,7 +430,7 @@ function plnpca_run(
     )
     x = var_prior === :trend ? vec(mean(M; dims = 1)) : Float64[] #mean log-abundance, the covariate of the trend
     pr = PLNPCAPriors(
-        vec(median(β; dims = 2)), τB, q > 0 ? vec(mean(abs2, g; dims = 2)) : Float64[], 1.0, fill(median(s2), p), x,
+        q > 0 ? vec(mean(abs2, g; dims = 2)) : Float64[], 1.0, fill(median(s2), p), x,
         float(span)
     )
     plnpca_hyper!(pr, st)
