@@ -255,8 +255,11 @@ using PLNRUV, Aqua, Test, Random, Distributions, Statistics
         #parts and tends to choose too many factors; the beta-binomial split also splits it
         c = choose_q(Y, X; qs = 0:4, nsplit = 1, rng = Xoshiro(1))
         @test c.qs == 0:4
-        @test c.q == 2
-        @test last(c.path) == 2 && length(c.path) <= 5
+        #with the default fit, q is an upper bound: ARD removes the factors the data do not support
+        @test size(plnpca(Y, X, c.q).Γ, 1) == 3 #the offset factor and the two true factors
+        @test length(c.path) <= 5
+        cp = choose_q(Y, X; qs = 0:4, nsplit = 1, rng = Xoshiro(1), fit = :pln)
+        @test cp.q == 2 && last(cp.path) == 2
         cb = choose_q(Y, X; qs = 0:4, nsplit = 1, split = :binomial, rng = Xoshiro(1))
         @test cb.q >= 2 && length(cb.path) == 1
         #the beta-binomial split: uncorrelated parts at r = 1 / CV² of the latent rate
@@ -326,6 +329,7 @@ using PLNRUV, Aqua, Test, Random, Distributions, Statistics
         @test all(diff(elbo) .> -1.0e-8 * abs(elbo[end])) #exact coordinate ascent
         @test maximum(abs, X' * st.m) < 1.0e-8 #scores in the residual space of X
         @test count(>(0.01), pr.τ2) == 2 #extra factors switched off (ARD)
+        @test size(plnpca(Y, X, 4).Γ, 1) == 3 #the offset factor and the two active factors
         fit = pln_mouthwash(Y, X, 2; controls = 1:c, fit = :plnpca)
         @test fit.pln.converged && fit.mouthwash.converged
         @test 0.18 < median(fit.pln.σ2) < 0.35 #truth 0.25

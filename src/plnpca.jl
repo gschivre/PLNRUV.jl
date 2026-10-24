@@ -1,4 +1,4 @@
-#Poisson-lognormal factor model fitted by variational empirical Bayes (design/plnpca.md)
+#Poisson-lognormal factor model fitted by variational empirical Bayes, the default PLN layer of pln_mouthwash
 #    yᵢⱼ | Zᵢⱼ ~ Poisson(exp(oᵢ + Zᵢⱼ)),   Zᵢⱼ | ... ~ N(xᵢ'Bⱼ + ℓᵢ + uᵢ'Γⱼ, σⱼ²)
 #    U = Q₂V,   Vᵣ ~ N(0, I_q),   Γⱼₗ ~ N(0, τₗ²),   Bⱼ ~ N(b̄, τB² I),   σⱼ² ~ InvGamma(a0, b0)
 #the scores U (rows uᵢ) live in the residual space of X, spanned by the n - k orthonormal columns of Q₂, as the
@@ -168,6 +168,8 @@ function plnpca_variances!(st, X, pr)
     return st
 end
 
+const A0MAX = 1.0e3
+
 #hyperparameters from all genes: τₗ² = meanⱼ (gⱼₗ² + Gⱼₗₗ); (a0, b0) maximising Σⱼ E[log p(σⱼ²)]:
 #b0 = p a0 / Σⱼ E[1 / σⱼ²] and log a0 - ψ(a0) = mean E[log σⱼ²] + log mean E[1 / σⱼ²] (Newton)
 function plnpca_hyper!(pr, st)
@@ -176,10 +178,12 @@ function plnpca_hyper!(pr, st)
     end
     w, lσ = invσ2(st), logσ2(st)
     c = mean(lσ) + log(mean(w))
-    a0 = c <= 1.0e-8 ? 1.0e4 : clamp(0.5 / c, 1.0e-3, 1.0e4)
+    #a0 is capped at 1000 (2000 prior degrees of freedom: complete pooling for any sample size); when all genes share
+    #one variance its estimate grows without bound, and a higher cap only slows the convergence
+    a0 = c <= 1.0e-8 ? A0MAX : clamp(0.5 / c, 1.0e-3, A0MAX)
     for _ in 1:50
         f = log(a0) - digamma(a0) - c
-        a0new = clamp(a0 - f / (1 / a0 - trigamma(a0)), a0 / 10, 1.0e4)
+        a0new = clamp(a0 - f / (1 / a0 - trigamma(a0)), a0 / 10, A0MAX)
         done = abs(a0new - a0) < 1.0e-10 * a0
         a0 = a0new
         done && break
@@ -187,6 +191,18 @@ function plnpca_hyper!(pr, st)
     pr.a0 = a0
     pr.b0 = length(w) * a0 / sum(w)
     return pr
+end
+
+#remove the factors whose prior variance τₗ² fell below threshold (switched off by ARD); true if any was removed
+function plnpca_prune!(st, pr, threshold)
+    keep = findall(>=(threshold), pr.τ2)
+    length(keep) == length(pr.τ2) && return false
+    st.g = st.g[keep, :]
+    st.G = [G[keep, keep] for G in st.G]
+    st.m = st.m[:, keep]
+    st.S = st.S[keep, keep]
+    pr.τ2 = pr.τ2[keep]
+    return true
 end
 
 #one sweep of the coordinate ascent
@@ -202,16 +218,19 @@ function plnpca_sweep!(st, pr, Y, X, o, Q2, offset_factor)
 end
 
 """
-    plnpca(Y, X, q; offsets = log library sizes, offset_factor = true, τB = 5, maxiter = 1000, tol = 1e-8)
+    plnpca(Y, X, q; offsets = log library sizes, offset_factor = true, τB = 5, maxiter = 1000, tol = 1e-7, prune = 1e-3)
 
-experimental: Poisson-lognormal factor model fitted by variational empirical Bayes (design/plnpca.md), the model of
-pln with random factor scores in the residual space of X, random loadings, random coefficients (whose uncertainty
-gives the overdispersions a REML-type correction) and an inverse-gamma prior on the overdispersions; every update is
-exact and the ELBO increases at every sweep; the loadings have one prior variance per factor (automatic relevance
-determination) and the hyperparameters are estimated from all genes; maxiter counts sweeps, and the fit stops when
-the relative change of the ELBO falls below tol
-return a PLNFit (σ2 = 1 / E[1 / σⱼ²], df = 2a0 + n - k - q - 1 as for a variance shrunk by limma), usable in place
-of pln by pln_mouthwash and choose_q (fit = :plnpca)
+Poisson-lognormal factor model fitted by variational empirical Bayes: the model of pln with random factor scores in
+the residual space of X, random loadings, random coefficients (whose uncertainty gives the overdispersions a
+REML-type correction) and an inverse-gamma prior on the overdispersions; every update is exact and the ELBO increases
+at every sweep; the loadings have one prior variance per factor (automatic relevance determination) and the
+hyperparameters are estimated from all genes; a factor whose prior variance falls below
+prune times the median variance is removed (q is an upper bound); maxiter counts sweeps, and the fit stops when
+the ELBO changes by less than tol per cell
+return a PLNFit (σ2 = 1 / E[1 / σⱼ²], df = 2a0 + n - k - q - 1 as for a variance shrunk by limma); the default fit
+of pln_mouthwash and choose_q
+on very sparse counts, or low counts with nearly equal variances (complete pooling), the variances approach their value
+slowly from above and the fit may stop at maxiter (converged = false), with overestimated, conservative variances
 """
 function plnpca(Y::AbstractMatrix{<:Integer}, X::AbstractMatrix{<:Real}, q::Integer; offset_factor::Bool = true, kwargs...)
     r = plnpca_run(Y, X, q; offset_factor = offset_factor, kwargs...)
@@ -219,7 +238,9 @@ function plnpca(Y::AbstractMatrix{<:Integer}, X::AbstractMatrix{<:Real}, q::Inte
     n, p = size(Y)
     k = size(X, 2)
     σ2 = st.b ./ st.a
-    df = fill(2 * pr.a0 + n - k - q - Int(offset_factor), p)
+    df = fill(2 * pr.a0 + n - k - size(st.g, 1) - Int(offset_factor), p)
+    #the factors switched off by ARD were removed during the fit: they carry no confounding, and their coefficients α
+    #in MOUTHWASH would not be identified
     Γ = offset_factor ? [ones(1, p); st.g] : st.g
     σ2mix = (w = ones(p, 1), s2 = reshape(σ2, :, 1), df = reshape(df, :, 1))
     return PLNFit(st.M, st.S2, latent_mean(st, X), st.β, Γ, σ2, r.offsets, df, σ2mix, r.elbo, r.sweeps, r.converged)
@@ -229,7 +250,7 @@ end
 function plnpca_run(
         Y::AbstractMatrix{<:Integer}, X::AbstractMatrix{<:Real}, q::Integer;
         offsets::AbstractVector{<:Real} = vec(log.(sum(Y; dims = 2))), offset_factor::Bool = true, τB::Real = 5.0,
-        maxiter::Integer = 1000, tol::Real = 1.0e-8
+        maxiter::Integer = 1000, tol::Real = 1.0e-7, prune::Real = 1.0e-3
     )
     n, p = size(Y)
     k = size(X, 2)
@@ -262,7 +283,15 @@ function plnpca_run(
         plnpca_sweep!(st, pr, Y, X, o, Q2, offset_factor)
         sweeps += 1
         elbonew = plnpca_elbo(st, Y, X, o, pr)
-        converged = abs(elbonew - elbo) < tol * abs(elbonew)
+        #a factor that ARD switches off has its prior variance decrease only geometrically, which keeps the ELBO
+        #moving: it is removed once negligible, and the fit goes on with the others (the ELBO jumps at a removal)
+        if plnpca_prune!(st, pr, prune * median(st.b ./ st.a))
+            elbo = plnpca_elbo(st, Y, X, o, pr)
+            continue
+        end
+        #change per cell: the ELBO itself is dominated by constant terms (Σ yᵢⱼoᵢ), so a change relative to it would
+        #stop the fit long before the parameters settle
+        converged = abs(elbonew - elbo) < tol * n * p
         elbo = elbonew
         converged && break
     end

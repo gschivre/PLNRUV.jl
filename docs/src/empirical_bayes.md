@@ -164,8 +164,8 @@ limma is the case of one component. A mixture can fit variances that are bimodal
 ``\omega_m`` are estimated by mix-SQP, and ``c`` by a one-dimensional search. The shrunk variance is ``\tilde\sigma_j^2
 = 1 / \mathbb E[\sigma_j^{-2} \mid \hat\sigma_j^2]``.
 
-The option `shrink_var = :vash` (default), `:limma` or `:none` applies wherever a variance is estimated: in the
-Gaussian MOUTHWASH and in each M-step of the PLN fit.
+The option `shrink_var = :vash` (default), `:limma` or `:none` applies to the Gaussian MOUTHWASH and to the older PLN
+fit ([§5.6](pln.md)). The default PLN fit puts the limma prior inside its own objective ([§5.1](pln.md)).
 
 **Variances that depend on expression.** Both priors pull every variance towards the same scale. But RNA-seq
 overdispersions decrease with expression: this is the mean–dispersion trend fitted by DESeq2 and edgeR. A common

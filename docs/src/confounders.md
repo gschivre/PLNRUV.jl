@@ -95,6 +95,10 @@ With very few samples, a fit with factors can diverge on the training part. This
 training counts in some samples: a loading can push these samples towards ``-\infty``. Such a ``q`` gets the score
 ``-\infty``, and the choice moves towards ``q = 0``, which has no loadings.
 
+With the default fit ([§5.1](pln.md)), ``q`` is an upper bound: the factors that the data do not support are
+switched off and removed during the fit. Several values of ``q`` then give the same fit, and `choose_q` may return a
+larger ``q`` than the number of factors kept.
+
 The keyword `ε` of `choose_q` is ``\theta``. Results are in [§7.5](validation.md).
 
 ## 3.4 Estimating the confounders

@@ -14,8 +14,8 @@ reads. Hidden confounders, variation outside the design that changes many genes 
 
 PLNRUV.jl treats both problems with one model:
 
-1. **Poisson-lognormal counts**: Poisson counts on a latent Gaussian layer. Zeros and low counts need no
-   pseudo-count.
+1. **Poisson-lognormal counts**: Poisson counts on a latent Gaussian layer, fitted by variational empirical Bayes.
+   Zeros and low counts need no pseudo-count.
 2. **Hidden confounders as latent factors**, separated from the effects by the rotation of CATE (Wang et al.) and
    estimated with MOUTHWASH (Gerard & Stephens).
 3. **The compositional offset as one more factor**, whose loadings are all one: a shift common to all genes of a

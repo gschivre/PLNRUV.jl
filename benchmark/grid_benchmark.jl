@@ -122,13 +122,13 @@ function oracle_methods(sim, sc)
     #uncertainty added to the variances, then the fitted inflation
     Γ, s2, ctrl = fit.pln.Γ, mw.s .^ 2, sim.controls
     a = zeros(p)
-    if q > 0
+    if size(Γ, 1) > 0 #factors switched off by the fit carry no loadings
         ΓC = Γ[:, ctrl]
         G = Symmetric(ΓC * (ΓC' ./ s2[ctrl]))
         free = setdiff(1:p, ctrl)
         a[free] .= vec(sum(Γ[:, free] .* (G \ Γ[:, free]); dims = 1))
     end
-    r = q > 0 ? mw.β̃ - Γ' * mw.α : mw.β̃
+    r = size(Γ, 1) > 0 ? mw.β̃ - Γ' * mw.α : mw.β̃
     N = PLNRUV.scale_noise(PLNRUV.NoiseModel(s2 .+ a, fit.pln.df), mw.λ)
     post = PLNRUV.ash_posterior(r, N, σ2, π; means = means)
     out["oracle_prior"] = (post.mean ./ log(2), PLNRUV.cumulative_rate(post.lfsr))

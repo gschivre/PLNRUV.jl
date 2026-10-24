@@ -8,25 +8,38 @@ p(y_{ij} \mid \mu_{ij}, \sigma_j^2) = \int \text{Poisson}\big(y_{ij};\, e^{o_i +
 \mathcal N(z;\, \mu_{ij}, \sigma_j^2)\, dz .
 ```
 
-Following Chiquet et al. (2018), the package maximises a lower bound of the log-likelihood instead, the ELBO, by
-variational EM.
+The package maximises instead a lower bound of the log-likelihood, the ELBO, by variational inference (Chiquet et al.
+2018). The default fit, [`plnpca`](@ref), also treats the factors, the loadings, the coefficients and the variances
+as random, with priors estimated from all genes. This is variational empirical Bayes.
 
-## 5.1 The variational approximation
+## 5.1 The model as a hierarchy
 
-- **Approximation** — the posterior of each latent value is replaced by an independent normal distribution,
-  ``\mathcal N(M_{ij}, S^2_{ij})``.
+[`plnpca`](@ref) completes the model of [§2](model.md) with priors:
 
-With a normal approximation, every term of the ELBO is explicit, because ``\mathbb E[e^{Z}] = e^{M + S^2/2}``:
+- **Factors.** The scores of the ``q`` hidden factors are random, ``\mathcal N(0, 1)``, and live in the residual space
+  of the design (``X^\top W = 0``). Their loadings are learned only from the variation that the design cannot explain,
+  as in the rotation of [§3](confounders.md). A factor therefore cannot absorb the effects of interest.
+- **Loadings.** ``\Gamma_{lj} \sim \mathcal N(0, \tau_l^2)``, with one variance per factor. A factor that the data do
+  not support gets ``\tau_l^2 \to 0`` and is switched off (automatic relevance determination). Too many factors then
+  cost little.
+- **Coefficients.** ``B_j`` has a weak normal prior. It keeps the estimates finite for genes that are zero in a whole
+  group.
+- **Variances.** ``\sigma_j^2 \sim \text{InvGamma}(a_0, b_0)``, the prior of limma ([§4.5](empirical_bayes.md)).
 
-```math
-\text{ELBO} = \sum_{i,j}\Big[ y_{ij}(o_i + M_{ij}) - e^{\,o_i + M_{ij} + S^2_{ij}/2}
-- \frac{(M_{ij} - \mu_{ij})^2 + S^2_{ij}}{2\sigma_j^2} - \tfrac12\log\sigma_j^2
-+ \tfrac12\log S^2_{ij}\Big] + \text{const}.
-```
+The offset factor ``w_{i0}`` stays a free parameter, also in the residual space of the design. The hyperparameters
+``\tau_l^2``, ``a_0`` and ``b_0`` are estimated from all genes at every iteration.
 
-The algorithm alternates an E-step (update ``M`` and ``S^2``) and an M-step (update ``\mu`` and ``\sigma^2``).
+## 5.2 The variational approximation
 
-## 5.2 E-step: a closed form
+- **Approximation** — the posterior is replaced by a product of simple distributions: a normal
+  ``\mathcal N(M_{ij}, S^2_{ij})`` for each latent value, normals for the scores, the loadings and the coefficients,
+  and an inverse gamma for each variance.
+
+Only the latent values ``Z_{ij}`` see the Poisson counts. Given them, the rest of the model is a linear Gaussian
+factor model. So every update has a closed form, and each one increases the ELBO. The fit stops when the ELBO changes
+by less than a tolerance per cell; the field `converged` reports whether this happened before `maxiter`.
+
+## 5.3 The latent values: a closed form
 
 For one cell ``(i, j)``, the ELBO is concave in ``M_{ij}``. **Result** — its maximum has a closed form:
 
@@ -35,9 +48,9 @@ M_{ij} = \mu_{ij} + \sigma_j^2 y_{ij} - \mathcal W_0\Big(\sigma_j^2\, e^{\,o_i +
 S^2_{ij}/2}\Big),
 ```
 
-where ``\mathcal W_0`` is the Lambert W function (the solution of ``w e^w = x``). The variance is the solution of
-``S^2_{ij} = 1 / (e^{\,o_i + M_{ij} + S^2_{ij}/2} + 1/\sigma_j^2)``, found by fixed-point iteration. Three
-alternations of the two updates are enough.
+where ``\mathcal W_0`` is the Lambert W function (the solution of ``w e^w = x``), ``\mu_{ij}`` the current mean and
+``\sigma_j^2`` the current value of ``1 / \mathbb E[1/\sigma_j^2]``. The variance is the solution of ``S^2_{ij} = 1 /
+(e^{\,o_i + M_{ij} + S^2_{ij}/2} + 1/\sigma_j^2)``, found by fixed-point iteration.
 
 !!! details "Derivation"
     The derivative in ``M`` is zero when ``y - e^{a + M} - (M - \mu)/\sigma^2 = 0``, with ``a = o + S^2/2``. Let
@@ -46,56 +59,50 @@ alternations of the two updates are enough.
     computes ``\mathcal W_0(e^t)`` directly, by Newton's method on ``w + \log w = t``. The derivative in ``S^2`` is
     zero when ``1/S^2 = e^{a + M} + 1/\sigma^2``.
 
-The E-step runs in parallel over genes.
+## 5.4 The variances
 
-## 5.3 M-step: the Gaussian machinery
+The update of ``\sigma_j^2`` uses the expected squared residual of each cell. This expectation includes the
+uncertainty of the coefficients, the scores and the loadings. **Result** — in the linear Gaussian model, this gives
+the restricted (REML) estimate: the residual sum of squares divided by about ``n - k - q`` rather than ``n``. Without
+it, the variances would be too small with few samples.
 
-With ``M`` and ``S^2`` fixed, the ELBO depends on the model parameters only through
+The estimate passed on is ``\sigma_j^2 = 1/\mathbb E[1/\sigma_j^2]``. Its degrees of freedom are ``2a_0 + n - k - q -
+1``, as for a variance shrunk by limma with ``d_0 = 2a_0`` prior degrees of freedom.
 
-```math
--\sum_{i,j} \frac{(M_{ij} - \mu_{ij})^2 + S^2_{ij}}{2\sigma_j^2} - \frac n2 \sum_j \log\sigma_j^2 ,
-\qquad \mu_{ij} = x_i^\top B_j + w_i^\top \Gamma_j .
-```
-
-This is a Gaussian factor regression of the matrix ``M``, solved with the rotation of [§3](confounders.md):
-
-- the first ``k`` rows of ``Q^\top M`` give ``B`` exactly;
-- a weighted PCA of the residual rows gives the factors ``W`` and the loadings ``\Gamma``, offset factor first.
-
-The variance of gene ``j`` is its residual sum of squares, including the variational variances, divided by an
-effective number of degrees of freedom:
-
-```math
-\hat\sigma_j^2 = \frac{\sum_i \big[(M_{ij} - \mu_{ij})^2 + S^2_{ij}\big]}{n - (n - d)\,\bar\kappa_j},
-\qquad \bar\kappa_j = \frac 1n \sum_i \Big(1 - \frac{S^2_{ij}}{\sigma_j^2}\Big).
-```
-
-``\kappa_{ij}`` is the information that cell ``(i, j)`` carries about its latent value: 1 when ``Z_{ij}`` is known
-exactly, 0 when the cell carries no information. The divisor is ``d`` for well-measured genes, as in a regression. It
-is ``n`` for genes with almost no reads, whose cells cannot pay for the fitted parameters. The variances are then
-shrunk across genes ([§4.5](empirical_bayes.md)).
-
-**Convergence.** The E-step increases the ELBO. The M-step with variance shrinkage is not an exact maximisation, so
-the ELBO can decrease slightly between iterations. The fit stops when the ELBO changes by less than a relative
-tolerance, in either direction. The field `converged` of the result reports whether this happened before `maxiter`.
-
-## 5.4 From the PLN fit to MOUTHWASH
+## 5.5 From the PLN fit to MOUTHWASH
 
 The raw estimate of each gene is the rotated row of interest of ``M``: ``b_j = u^\top M_{\cdot j} / R_{kk}``, where
 ``u`` is the column ``k`` of ``Q``.
 
-Its standard error cannot come from the residual rows of ``M``. The E-step pulls them towards the fitted factors, so
-their spread underestimates the noise. The standard error uses instead the model's variance of each cell on the
-latent scale. It is the biological variance plus the Poisson noise, ``\sigma_j^2 + 1/\bar y_{ij}``:
+Its standard error uses the model's variance of each cell on the latent scale: the biological variance plus the
+Poisson noise, ``\sigma_j^2 + 1/\bar y_{ij}``:
 
 ```math
 s_j = \frac{1}{\lvert R_{kk}\rvert}\sqrt{\sum_i u_i^2\, \big(\sigma_j^2 + 1/\bar y_{ij}\big)} .
 ```
 
-The estimates ``b_j``, their standard errors ``s_j`` and the loadings ``\Gamma`` then go into MOUTHWASH
-([§4.3](empirical_bayes.md)). The check of these standard errors is in [§7.3](validation.md).
+The spread of the residual rows of ``M`` cannot be used instead: the fit pulls them towards the factors, so their
+spread underestimates the noise. The estimates ``b_j``, their standard errors and the loadings then go into
+MOUTHWASH ([§4.3](empirical_bayes.md)).
+
+## 5.6 The older fit
+
+`fit = :pln` selects the earlier fit, [`pln`](@ref). It treats the scores and loadings as fixed parameters, estimated
+by a weighted PCA of the residual rows of ``M``, and shrinks the variances with vash or limma at each iteration. With
+two or three samples per group it can diverge, and its false discovery rate is far above the nominal level on real
+data. The comparison is in [§7.5](validation.md).
+
+**Slow convergence.** Two situations make the fit slow:
+
+- very sparse counts, such as single-cell data, where each cell carries little information;
+- low counts together with variances that are nearly the same for all genes, where the prior pools them completely.
+
+The variances then approach their value slowly from above, and the fit may stop at `maxiter` with `converged =
+false`. The variances are then overestimated: the error is conservative. On bulk RNA-seq data the variances differ
+between genes, and the fit converges in a few tens of iterations.
 
 ## Functions
 
-- [`pln`](@ref): variational EM for the PLN layer.
+- [`plnpca`](@ref): the default fit of the PLN layer.
+- [`pln`](@ref): the older fit.
 - [`pln_mouthwash`](@ref): the PLN fit followed by MOUTHWASH.

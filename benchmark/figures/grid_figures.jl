@@ -15,6 +15,7 @@ const HIGHLIGHT = [
     ("PLNRUV_EB_controls", "PLNRUV EB (controls)", colorant"#2a78d6", :solid),
     ("PLNRUV_EB_sparsity", "PLNRUV EB (sparsity)", colorant"#2a78d6", :dash),
     ("PLNRUV_gaussian_logratio", "PLNRUV Gaussian log-ratios", colorant"#2a78d6", :dot),
+    ("PLNRUV_PLN_EB_controls", "PLNRUV EB, older fit (controls)", colorant"#8fb8e8", :solid),
     ("paper_RNARx_CATE", "Spike-in CATE + DESeq2 (2025)", colorant"#eb6834", :solid),
     ("DESeq2", "DESeq2", colorant"#52514e", :solid),
 ]

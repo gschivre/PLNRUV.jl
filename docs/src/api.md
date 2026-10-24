@@ -20,6 +20,7 @@ log_ratio
 ```@docs
 pln_mouthwash
 pln
+plnpca
 mouthwash
 factor_analysis
 choose_q

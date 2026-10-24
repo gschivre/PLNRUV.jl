@@ -13,7 +13,7 @@ export filter_genes
 export surrogate_factors, assign_groups, thin_counts, thin_2group
 export log_ratio
 export ash, mouthwash, factor_analysis, evalues, ebh
-export pln, pln_mouthwash, choose_q
+export pln, plnpca, pln_mouthwash, choose_q
 export squeeze_var, vash
 
 include("simulation.jl")

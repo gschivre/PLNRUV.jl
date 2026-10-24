@@ -47,13 +47,13 @@ function split_counts(rng, Y, r, ε)
 end
 
 """
-    choose_q(Y, X; qs = 0:6, ε = 0.5, nsplit = 2, split = :betabinomial, maxrounds = 5, offset_factor = true, rng, fit = :pln, kwargs...)
+    choose_q(Y, X; qs = 0:6, ε = 0.5, nsplit = 2, split = :betabinomial, maxrounds = 5, offset_factor = true, rng, fit = :plnpca, kwargs...)
 
 number of latent factors of the PLN model by count splitting: Y is split in two (beta-binomial thinning with
 rⱼ = 1 / (exp(σⱼ²) - 1), which splits the latent noise as well as the Poisson noise; split = :binomial for plain
 binomial thinning), the model is fitted on the first part for each q in qs and scored by the predictive
 log-likelihood of the second part (averaged over nsplit splits); σⱼ² comes from a fit at the current choice, from
-q = 0, repeated until the choice is stable (at most maxrounds); kwargs are passed to the fit (pln, or plnpca with fit = :plnpca)
+q = 0, repeated until the choice is stable (at most maxrounds); kwargs are passed to the fit (plnpca, or pln with fit = :pln)
 a q whose fit on the first part fails (with one or two residual degrees of freedom a gene that is zero in some samples
 of that part lets a loading diverge) gets the score -Inf: the data do not support it, and the choice falls back
 towards q = 0, which has no loadings
@@ -62,7 +62,7 @@ return the chosen q, the scores of each q (last round) and the choices of the su
 function choose_q(
         Y::AbstractMatrix{<:Integer}, X::AbstractMatrix{<:Real}; qs = 0:6, ε::Real = 0.5, nsplit::Integer = 2,
         split::Symbol = :betabinomial, maxrounds::Integer = 5, offset_factor::Bool = true,
-        rng::AbstractRNG = Random.default_rng(), fit::Symbol = :pln, kwargs...
+        rng::AbstractRNG = Random.default_rng(), fit::Symbol = :plnpca, kwargs...
     )
     @assert 0 < ε < 1
     @assert split in (:betabinomial, :binomial) "split must be :betabinomial or :binomial"

@@ -135,11 +135,11 @@ function julia_methods(counts, X, controls, q)
     out["PLNRUV_EB_sparsity"] = (ebf.mean ./ log(2), ebf.svalue)
     g = mouthwash(log_ratio(counts, controls), X, q; controls = controls)
     out["PLNRUV_gaussian_logratio"] = (g.mean ./ log(2), g.svalue)
-    #experimental variational empirical Bayes fit (plnpca branch)
-    pc = pln_mouthwash(counts, X, q; controls = controls, fit = :plnpca).mouthwash
-    out["PLNRUV_PCA_EB_controls"] = (pc.mean ./ log(2), pc.svalue)
-    pcf = pln_mouthwash(counts, X, q; fit = :plnpca).mouthwash
-    out["PLNRUV_PCA_EB_sparsity"] = (pcf.mean ./ log(2), pcf.svalue)
+    #the older PLN fit (fixed scores and loadings), for comparison with the default plnpca
+    pc = pln_mouthwash(counts, X, q; controls = controls, fit = :pln).mouthwash
+    out["PLNRUV_PLN_EB_controls"] = (pc.mean ./ log(2), pc.svalue)
+    pcf = pln_mouthwash(counts, X, q; fit = :pln).mouthwash
+    out["PLNRUV_PLN_EB_sparsity"] = (pcf.mean ./ log(2), pcf.svalue)
     return out
 end
 

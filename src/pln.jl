@@ -125,7 +125,7 @@ function pln(
 end
 
 """
-    pln_mouthwash(Y, X, q; controls = Int[], cov_of_interest = size(X, 2), offset_factor = true, nullweight = 10, estimate_λ = true, likelihood = :t, mode = :auto, kwargs...)
+    pln_mouthwash(Y, X, q; controls = Int[], cov_of_interest = size(X, 2), offset_factor = true, nullweight = 10, estimate_λ = true, likelihood = :t, mode = :auto, fit = :plnpca, kwargs...)
 
 empirical Bayes branch: PLN fit (stage 1) followed by MOUTHWASH (stage 2)
 bⱼ = u'Mⱼ / Rₖₖ with u the column of Q for the covariate of interest; its standard error uses the latent-scale
@@ -133,13 +133,13 @@ variance of each cell σⱼ² + 1 / ȳᵢⱼ (lognormal variance + Poisson noise
 the variances of M itself are too small in the residual rows that are shrunk toward the fitted factors
 with controls, mode = :auto centres the non-null part of the effect prior at an estimated mode when a shift shared by
 many genes (a global change of transcription) raises the held-out likelihood (see ash); the null stays at zero
-fit = :plnpca uses the experimental variational empirical Bayes fit plnpca instead of pln; kwargs go to the fit
+the PLN layer is fitted by plnpca (fit = :plnpca, the default) or by the older pln (fit = :pln); kwargs go to the fit
 """
 function pln_mouthwash(
         Y::AbstractMatrix{<:Integer}, X::AbstractMatrix{<:Real}, q::Integer;
         controls::AbstractVector{<:Integer} = Int[], cov_of_interest::Integer = size(X, 2),
         offset_factor::Bool = true, nullweight::Real = 10, estimate_λ::Bool = true, alpha_uncertainty::Bool = true,
-        likelihood::Symbol = :t, mode::Symbol = :auto, mode_threshold::Real = 0.05, fit::Symbol = :pln, kwargs...
+        likelihood::Symbol = :t, mode::Symbol = :auto, mode_threshold::Real = 0.05, fit::Symbol = :plnpca, kwargs...
     )
     method = fit
     fit = fit_latent(method, Y, X, q; offset_factor = offset_factor, kwargs...)

@@ -127,26 +127,35 @@ Same benchmark, PLNRUV with controls, 10 replicates.
 - Below a mean count of 1 it chooses ``q = 0``. There the latent noise cannot be identified, and ``q = 0`` is the
   conservative choice.
 
-**Calibration with few samples.** FDP of PLNRUV with controls, ``q`` chosen by `choose_q`, 10 replicates.
+**Calibration with few samples.** PLNRUV with controls, ``q`` chosen by `choose_q`, 10 replicates. FDP / power of
+the default fit and of the older fit ([§5.6](pln.md)), on the same data sets:
 
-| data | design | 5 per group | 3 per group | 2 per group |
+| data | design | per group | default fit | older fit |
 |---|---|---|---|---|
-| PLN-exact simulation | balanced | 5.2 % | 13 % | 31 % |
-| PLN-exact simulation | confounded | 3.8 % | 7 % | 12 % |
-| thinned GTEx | balanced | 1.9 % | 15.6 % | ~66 % |
-| thinned GTEx | confounded | 3.7 % | 22.3 % | ~68 % |
+| thinned GTEx | balanced | 2 | 0 % / 0.000 | 65 % / 0.044 |
+| thinned GTEx | balanced | 3 | 0 % / 0.001 | 15 % / 0.044 |
+| thinned GTEx | balanced | 5 | 1.8 % / 0.094 | 2.8 % / 0.064 |
+| thinned GTEx | confounded | 2 | 45 % (one discovery) / 0.000 | 68 % / 0.016 |
+| thinned GTEx | confounded | 3 | 2.0 % / 0.001 | 22 % / 0.041 |
+| thinned GTEx | confounded | 5 | 6.1 % / 0.098 | 5.1 % / 0.055 |
+| PLN-exact simulation | balanced | 5 | 6.0 % / 0.091 | 4.2 % / 0.043 |
+| PLN-exact simulation | confounded | 5 | 11.4 % / 0.079 | 4.1 % / 0.035 |
 
-- From five samples per group, the FDP is controlled.
-- With three samples per group, fixing ``q = 2`` leaves one residual degree of freedom and gives an FDP of 36–41 % on
-  PLN-exact data. `choose_q` brings it to 7–13 %.
-- With two or three samples per group, every method we tried fails as well, including the oracles of §7.4.
+- With two or three samples per group, the default fit makes almost no discoveries. The older fit makes many, and
+  most of them are false.
+- With five samples per group on GTEx, the default fit is calibrated, with 50–80 % more power.
+- On the PLN-exact simulation with five samples per group, the default fit has an excess of false discoveries (11.4 ±
+  3.4 % in the confounded design). They come from low- and mid-expression genes; see below.
+- No fit failed. The default fit was 3–8 times faster.
 
-Two causes add up. First, with one or two residual degrees of freedom, each gene's variance rests almost entirely on
-the shrinkage prior. On PLN-exact data, this alone makes the tails of the null ``z``-scores about twice too heavy.
-Second, real samples differ in their overall variability (individuals, sample quality), which the model does not
-describe. This explains why GTEx is worse than the exact simulation.
+**Why the variances limit small samples.** With one or two residual degrees of freedom, each gene's variance rests
+almost entirely on the shrinkage prior. Both fits shrink all variances towards one scale. In the PLN-exact
+simulation, the variance falls with expression (from 0.45 to 0.06), so the variances of low-count genes are
+underestimated: the null ``z``-scores have a variance of about 1.4 in the low-expression third of the genes and 0.9 in
+the high-expression third, with either fit. On GTEx the variances scatter widely around their trend, and the effect
+is weaker. Real samples also differ in their overall variability, which the model does not describe.
 
-**Shrinking towards the trend does not fix it.** With `var_trend = true`, the null tails are corrected on PLN-exact
+**Shrinking towards the trend does not fix it.** With `var_trend = true` (older fit), the null tails are corrected on PLN-exact
 data, where the variance is an exact function of the mean. On GTEx the FDP gets worse: 14.4 % instead of 1.9 % with
 five samples per group (balanced). Real genes scatter around the trend, and the trend pulls the genes with a truly
 high variance down.
