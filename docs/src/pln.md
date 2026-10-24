@@ -9,8 +9,9 @@ p(y_{ij} \mid \mu_{ij}, \sigma_j^2) = \int \text{Poisson}\big(y_{ij};\, e^{o_i +
 ```
 
 The package maximises instead a lower bound of the log-likelihood, the ELBO, by variational inference (Chiquet et al.
-2018). The fit, [`plnpca`](@ref), also treats the factors, the loadings, the coefficients and the variances as
-random, with priors estimated from all genes. This is variational empirical Bayes.
+2018). The fit, [`plnpca`](@ref), also treats the factors, the loadings and the variances as random, with priors
+estimated from all genes. This is variational empirical Bayes. The coefficients have no prior, but their uncertainty
+is kept.
 
 ## 5.1 The model as a hierarchy
 
@@ -63,9 +64,9 @@ where ``\mathcal W_0`` is the Lambert W function (the solution of ``w e^w = x``)
 
 ## 5.4 The variances
 
-**Degrees of freedom.** Gene ``j`` has ``n`` counts, one per sample, but its own coefficients and loadings use some of them. Their
-number is the trace of the gene's hat matrix, ``t_j \approx k + q``. The posterior of the variance counts only the
-rest:
+**Degrees of freedom.** Gene ``j`` has ``n`` counts, one per sample, but its own coefficients and loadings use some
+of them. Their number is the trace of the gene's hat matrix, ``t_j \approx k + q``. The posterior of the variance
+counts only the rest:
 
 ```math
 q(\sigma_j^2) = \text{InvGamma}\Big(a_0 + \tfrac{n - t_j}{2},\;\; a_0 \sigma_0^2(x_j) + \tfrac{1}{2}\,\text{RSS}_j\Big),
