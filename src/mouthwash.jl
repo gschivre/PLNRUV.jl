@@ -61,26 +61,48 @@ end
 #with alpha_uncertainty = true the variance of each corrected estimate rⱼ = β̃ⱼ - Γⱼ'α̂ includes the uncertainty of α̂
 #(as in the CATE variance of Wang et al.): λ (sⱼ² + Γⱼ' V Γⱼ), V = (Γ_C diag(1 / s_C²) Γ_C')⁻¹ with controls; without
 #controls, V is the inverse weighted Gram matrix of the α step at convergence, and the prior is refitted
+#Γcov (one covariance matrix per gene, or empty) is the uncertainty of the estimated loadings: the correction Γⱼ'α
+#then has the error variance lⱼ(α) = α'Γcovⱼα, which is added to the noise of gene j (inside λ, as the uncertainty
+#of α̂); it vanishes without confounding (α ≈ 0) and, as Γcovⱼ scales with the latent variance σⱼ² and not with the
+#Poisson noise, weighs most on highly expressed genes, which a single multiplicative λ cannot cover
 #the noise model of β̃ (default: a t with df degrees of freedom and squared scale sⱼ²) can be a mixture of t
 #(vash); s is then the effective standard error used for the α weights and the grid
 #with controls the non-null part of the prior may be centred at an estimated mode instead of zero (see ash, mode)
 function mouthwash_fit(
         β̃, s, Γ, controls; nullweight = 10, estimate_λ = true, alpha_uncertainty = true, df = Inf,
         noise::NoiseModel = NoiseModel(s .^ 2, df), mode::Symbol = :auto, mode_threshold::Real = 0.05,
-        tol = 1.0e-7, maxiter = 500
+        Γcov::AbstractVector = Matrix{Float64}[], tol = 1.0e-7, maxiter = 500
     )
     p = length(β̃)
-    N = noise
-    s2 = s .^ 2
+    s2base = s .^ 2
+    loading_var(α) = isempty(Γcov) ? zeros(p) : [dot(α, Γcov[j] * α) for j in 1:p]
+    #normal equations of α with uncertain loadings: Σⱼ cⱼ E[ΓⱼΓⱼ'] = Σⱼ cⱼ (ΓⱼΓⱼ' + Γcovⱼ) (errors in variables); along
+    #a direction that the loadings do not determine (a factor nearly switched off) Γcov dominates and α stays finite,
+    #where Γ diag(c) Γ' alone would be singular
+    gram(genes, c) = Symmetric(Γ[:, genes] * (Γ[:, genes]' .* c) .+ (isempty(Γcov) ? 0.0 : sum(c[i] .* Γcov[j] for (i, j) in enumerate(genes))))
     free = setdiff(1:p, controls)
-    #α from the controls only (weights 1 / sⱼ², λ cancels), or a starting value from all genes without controls
+    #α from the controls only (weights 1 / (sⱼ² + lⱼ(α)), λ cancels; fixed-point iteration until α settles, as lⱼ
+    #depends on α), or a starting value from all genes without controls
     if isempty(controls)
-        α = Γ' \ β̃
+        α = gram(1:p, 1 ./ s2base) \ (Γ * (β̃ ./ s2base))
     else
         ΓC = Γ[:, controls]
-        G = Symmetric(ΓC * (ΓC' ./ s2[controls]))
-        α = G \ (ΓC * (β̃[controls] ./ s2[controls]))
-        if alpha_uncertainty #Var(rⱼ) = λ (sⱼ² + Γⱼ' G⁻¹ Γⱼ) for the non-control genes
+        α = zeros(size(Γ, 1))
+        G = Symmetric(ΓC * ΓC')
+        for _ in 1:(isempty(Γcov) ? 1 : 50)
+            wC = 1 ./ (s2base[controls] .+ loading_var(α)[controls])
+            G = gram(controls, wC)
+            αnew = G \ (ΓC * (β̃[controls] .* wC))
+            done = maximum(abs, αnew .- α; init = 0.0) < 1.0e-10 * (1 + maximum(abs, αnew; init = 0.0))
+            α = αnew
+            done && break
+        end
+    end
+    l = loading_var(α)
+    s2 = s2base .+ l
+    N = add_noise(noise, l)
+    if !isempty(controls)
+        if alpha_uncertainty #Var(rⱼ) = λ (sⱼ² + lⱼ + Γⱼ' G⁻¹ Γⱼ) for the non-control genes
             a = zeros(p)
             a[free] .= vec(sum(Γ[:, free] .* (G \ Γ[:, free]); dims = 1))
             s2 = s2 .+ a
@@ -124,8 +146,14 @@ function mouthwash_fit(
             #cⱼ = Σₖ wⱼₖ / (λ sⱼ² + σₖ²)
             if isempty(controls)
                 c = [sum(W[j, k] / (λ * s2[j] + σ2[k]) for k in 1:K) for j in 1:p]
-                α = Symmetric(Γ * (c .* Γ')) \ (Γ * (c .* β̃))
+                α = gram(1:p, c) \ (Γ * (c .* β̃))
                 r = β̃ - Γ' * α
+                if !isempty(Γcov) #the loading term follows α (l, s2 and N of the enclosing function: the steps after
+                    #the loop use their last values)
+                    l = loading_var(α)
+                    s2 = s2base .+ l
+                    N = add_noise(noise, l)
+                end
             end
             estimate_λ && (λ = update_λ(r, N, σ2, W; means = means))
         end
@@ -146,7 +174,7 @@ function mouthwash_fit(
     if alpha_uncertainty && isempty(controls)
         #Var(α̂) from the weighted least squares of the last α step, then refit the prior with the corrected variances
         c = [sum(W[j, k] / (λ * s2[j] + σ2[k]) for k in 1:K) for j in 1:p]
-        Vα = inv(Symmetric(Γ * (c .* Γ')))
+        Vα = inv(gram(1:p, c))
         Nv = add_noise(Nv, vec(sum(Γ .* (Vα * Γ); dims = 1)))
         mixture_lik!(Lik, logscale, r, Nv, σ2, 1.0; means = means)
         π, obj = mixture_weights(Lik, logscale, free, prior; π0 = π)

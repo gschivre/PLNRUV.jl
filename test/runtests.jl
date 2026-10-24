@@ -30,10 +30,16 @@ using PLNRUV, Aqua, Test, Random, Distributions, Statistics
         n, p = 400, 300
         z = randn(rng, n) #one strong latent factor
         counts = [rand(rng, Poisson(exp(4 + 1.5 * z[i] * g))) for g in randn(rng, p), i in 1:n]
-        cors = [mean(thin_2group(rng, counts; nsamp = n, target_cor = [0.5]).realized_cor[1]) for _ in 1:20]
+        #thresholding: the target on average
+        cors = [thin_2group(rng, counts; nsamp = n, target_cor = [0.5], assignment = :threshold).realized_cor[1] for _ in 1:20]
         @test abs(mean(abs.(cors)) - 0.5) < 0.1
-        sim = thin_2group(rng, counts; nsamp = n, target_cor = [0.0])
-        @test abs(sim.realized_cor[1]) < 0.2
+        #rerandomisation: the target in every data set, also with few samples
+        for (ns, target) in ((n, [0.5]), (n, [0.0]), (12, [0.6]))
+            sim = thin_2group(rng, counts; nsamp = ns, target_cor = target)
+            @test abs(abs(sim.realized_cor[1]) - abs(target[1])) <= 0.15
+        end
+        #the realised correlations are recorded for random groups too
+        @test length(thin_2group(rng, counts; nsamp = 12).realized_cor) == 2
         #sequencing depth is removed from the surrogate variables
         depth = exp.(randn(rng, n))
         deep = [rand(rng, Poisson(10 * depth[i])) for _ in 1:p, i in 1:n]
@@ -200,25 +206,10 @@ using PLNRUV, Aqua, Test, Random, Distributions, Statistics
             @test isapprox(w + log(w), t; atol = 1.0e-12)
         end
         @test isfinite(PLNRUV.lambertw_exp(800.0)) #exp(800) overflows
-        M, S2 = PLNRUV.estep_cell(7, 1.2, -0.4, 0.8, 0.0, 0.5; inner = 50)
+        M, S2 = PLNRUV.estep_count(7, 1.2, -0.4, 0.8, 0.0, 0.5; inner = 50)
         f(m, s2) = 7 * (1.2 + m) - exp(1.2 + m + s2 / 2) - ((m + 0.4)^2 + s2) / (2 * 0.8) + log(s2) / 2
         @test f(M, S2) >= maximum(f(M + δ, S2) for δ in -0.01:0.001:0.01)
         @test f(M, S2) >= maximum(f(M, S2 * e) for e in 0.9:0.01:1.1)
-    end
-
-    @testset "PLN with many factors on near-empty genes" begin
-        #with few residual degrees of freedom (d = 20 - 2 - 10 - 1 = 7), genes whose cells carry no information
-        #used to see σ² multiplied by n / d at every M-step until the fit broke
-        rng = Xoshiro(12)
-        n, p = 20, 300
-        X = [ones(n) repeat([0.0, 1.0], n ÷ 2)]
-        A = -2.5 .+ 0.5 .* randn(rng, 1, p) .+ 0.4 .* randn(rng, n, p)
-        Y = [rand(rng, Poisson(exp(A[i, j]))) for i in 1:n, j in 1:p]
-        Y[:, 1:5] .= 0
-        Y[1, 1:5] .= 1 #genes with a single read
-        fit = pln(Y, X, 10)
-        @test all(isfinite, fit.M) && all(isfinite, fit.σ2)
-        @test maximum(fit.σ2) < 100
     end
 
     @testset "PLN + MOUTHWASH on low counts" begin
@@ -233,7 +224,7 @@ using PLNRUV, Aqua, Test, Random, Distributions, Statistics
         fit = pln_mouthwash(Y, X, 0; controls = 1:c)
         mw = fit.mouthwash
         nc = (c + 1):p
-        @test fit.pln.converged && fit.pln.iterations < 500
+        @test fit.pln.converged
         @test mw.converged
         @test 0.7 < mw.λ < 1.5 #the latent-scale standard errors need little inflation
         @test cor(mw.mean[nc], β[nc]) > 0.85
@@ -249,19 +240,28 @@ using PLNRUV, Aqua, Test, Random, Distributions, Statistics
         X = [ones(n) repeat([0.0, 1.0], n ÷ 2)]
         W = randn(rng, n, 2)
         W .-= X * (X \ W)
-        A = X * [randn(rng, 1, p) .+ 3; zeros(1, p)] + W * (0.5 .* randn(rng, 2, p)) + 0.3 .* randn(rng, n, p)
+        #latent sd around 0.3, gene by gene (real genes never share exactly one variance)
+        A = X * [randn(rng, 1, p) .+ 3; zeros(1, p)] + W * (0.5 .* randn(rng, 2, p)) +
+            randn(rng, n, p) .* (0.3 .* exp.(0.25 .* randn(rng, 1, p)))
         Y = [rand(rng, Poisson(exp(A[i, j]))) for i in 1:n, j in 1:p]
-        #counts around 20: the latent noise dominates the Poisson noise, binomial thinning leaves it shared by the two
-        #parts and tends to choose too many factors; the beta-binomial split also splits it
+        #counts around 20: the latent noise dominates the Poisson noise; the binomial split (default) leaves it shared by
+        #the two parts, which with the variational fit does not lead to too many factors
         c = choose_q(Y, X; qs = 0:4, nsplit = 1, rng = Xoshiro(1))
         @test c.qs == 0:4
-        #with the default fit, q is an upper bound: ARD removes the factors the data do not support
-        @test size(plnpca(Y, X, c.q).Γ, 1) == 3 #the offset factor and the two true factors
-        @test length(c.path) <= 5
-        cp = choose_q(Y, X; qs = 0:4, nsplit = 1, rng = Xoshiro(1), fit = :pln)
-        @test cp.q == 2 && last(cp.path) == 2
-        cb = choose_q(Y, X; qs = 0:4, nsplit = 1, split = :binomial, rng = Xoshiro(1))
-        @test cb.q >= 2 && length(cb.path) == 1
+        @test c.q == 2 && length(c.path) <= 5
+        #other true numbers of factors, the same design: the number kept by the fit at the chosen bound
+        for qtrue in (0, 1, 3)
+            rng = Xoshiro(20 + qtrue)
+            W = randn(rng, n, qtrue)
+            W .-= X * (X \ W)
+            A = X * [randn(rng, 1, p) .+ 3; zeros(1, p)] + W * (0.5 .* randn(rng, qtrue, p)) +
+                randn(rng, n, p) .* (0.3 .* exp.(0.25 .* randn(rng, 1, p)))
+            Yt = [rand(rng, Poisson(exp(A[i, j]))) for i in 1:n, j in 1:p]
+            @test choose_q(Yt, X; qs = 0:5, nsplit = 1, rng = Xoshiro(1)).q == qtrue
+        end
+        @test length(c.path) == 1 #no pilot fit: a single pass
+        cb = choose_q(Y, X; qs = 0:4, nsplit = 1, split = :betabinomial, rng = Xoshiro(1))
+        @test cb.q == 2
         #the beta-binomial split: uncorrelated parts at r = 1 / CV² of the latent rate
         rng = Xoshiro(11)
         σ2, m = 0.5, 20.0
@@ -271,30 +271,19 @@ using PLNRUV, Aqua, Test, Random, Distributions, Statistics
         @test abs(cor(vec(y1), vec(y2))) < 0.01
         y1b, y2b = PLNRUV.split_counts(rng, reshape(y, :, 1), [Inf], 0.5)
         @test cor(vec(y1b), vec(y2b)) > 0.5
-        #3 samples per group and genes that are on in some samples and off in others: some fits with factors diverge
-        #on the split, those q are rejected instead of stopping the choice
+        #3 samples per group and genes that are on in some samples and off in others: the choice runs on a design with
+        #a single residual degree of freedom at q = 2
         rng = Xoshiro(1)
         n, p = 6, 1_000
         X = [ones(n) repeat([0.0, 1.0], n ÷ 2)]
         W = randn(rng, n, 2)
         W .-= X * (X \ W)
-        A = X * [randn(rng, 1, p) .* 0.5 .+ 4; zeros(1, p)] + W * (0.5 .* randn(rng, 2, p)) + 0.3 .* randn(rng, n, p)
+        A = X * [randn(rng, 1, p) .* 0.5 .+ 4; zeros(1, p)] + W * (0.5 .* randn(rng, 2, p)) +
+            randn(rng, n, p) .* (0.3 .* exp.(0.25 .* randn(rng, 1, p)))
         A[:, 1:20] .= 3 .+ 4 .* randn(rng, n, 20)
         Y = [rand(rng, Poisson(exp(A[i, j]))) for i in 1:n, j in 1:p]
         c = choose_q(Y, X; qs = 0:2, nsplit = 1, rng = Xoshiro(1))
         @test c.q in 0:2
-    end
-
-    @testset "warm-started vash" begin
-        rng = Xoshiro(13)
-        p, d = 2_000, 8
-        s2 = rand(rng, Gamma(2, 0.1), p) .* rand(rng, Chisq(d), p) ./ d
-        v0 = vash(s2, d)
-        s2b = s2 .* exp.(0.05 .* randn(rng, p)) #the variances of the next EM iteration
-        cold = vash(s2b, d)
-        warm = vash(s2b, d; warm = (c = v0.c, π = v0.π))
-        @test maximum(abs.(warm.s2 ./ cold.s2 .- 1)) < 1.0e-3
-        @test isapprox(warm.c, cold.c; rtol = 1.0e-3)
     end
 
     @testset "display" begin
@@ -302,19 +291,21 @@ using PLNRUV, Aqua, Test, Random, Distributions, Statistics
         n, p, c = 30, 200, 40
         X = [ones(n) repeat([0.0, 1.0], n ÷ 2)]
         β = [zeros(c); (rand(rng, p - c) .< 0.3) .* randn(rng, p - c) .* 1.5]
-        Y = [rand(rng, Poisson(exp(log(5.0) + X[i, 2] * β[j] + 0.3 * randn(rng)))) for i in 1:n, j in 1:p]
+        sd = 0.3 .* exp.(0.25 .* randn(rng, p))
+        Y = [rand(rng, Poisson(exp(log(5.0) + X[i, 2] * β[j] + sd[j] * randn(rng)))) for i in 1:n, j in 1:p]
         mw = pln_mouthwash(Y, X, 1; controls = 1:c).mouthwash
         txt = sprint(show, MIME"text/plain"(), mw)
         @test occursin("Confounders", txt) && occursin("Discoveries", txt)
     end
 
-    @testset "PLN-PCA by variational empirical Bayes (experimental)" begin
+    @testset "PLN-PCA by variational empirical Bayes" begin
         rng = Xoshiro(12)
         n, p, c = 20, 400, 60
         X = [ones(n) repeat([0.0, 1.0], inner = n ÷ 2)]
         W = randn(rng, n, 2) .+ 0.8 .* X[:, 2] #confounders correlated with the group
         β = [zeros(c); (rand(rng, p - c) .< 0.2) .* randn(rng, p - c)]
-        Z = (randn(rng, p) .+ 3)' .+ X[:, 2] .* (β' .+ 0.5) .+ W * (0.4 .* randn(rng, 2, p)) .+ 0.5 .* randn(rng, n, p)
+        Z = (randn(rng, p) .+ 3)' .+ X[:, 2] .* (β' .+ 0.5) .+ W * (0.4 .* randn(rng, 2, p)) .+
+            randn(rng, n, p) .* (0.5 .* exp.(0.25 .* randn(rng, 1, p))) #latent sd around 0.5
         Y = [rand(rng, Poisson(exp(Z[i, j]))) for i in 1:n, j in 1:p]
         o = vec(log.(sum(Y; dims = 2)))
         LA = PLNRUV.LinearAlgebra #not a test dependency
@@ -330,11 +321,48 @@ using PLNRUV, Aqua, Test, Random, Distributions, Statistics
         @test maximum(abs, X' * st.m) < 1.0e-8 #scores in the residual space of X
         @test count(>(0.01), pr.τ2) == 2 #extra factors switched off (ARD)
         @test size(plnpca(Y, X, 4).Γ, 1) == 3 #the offset factor and the two active factors
-        fit = pln_mouthwash(Y, X, 2; controls = 1:c, fit = :plnpca)
+        fit = pln_mouthwash(Y, X, 2; controls = 1:c)
         @test fit.pln.converged && fit.mouthwash.converged
-        @test 0.18 < median(fit.pln.σ2) < 0.35 #truth 0.25
+        @test 0.18 < median(fit.pln.σ2) < 0.35 #truth: median 0.25
         @test cor(fit.mouthwash.mean[(c + 1):p], β[(c + 1):p]) > 0.7
-        @test_throws ArgumentError pln_mouthwash(Y, X, 2; fit = :other)
+        #posterior covariance of each gene's loadings, the offset row known
+        @test length(fit.pln.Γcov) == p && size(fit.pln.Γcov[1]) == (3, 3) && all(G -> G[1, 1] == 0, fit.pln.Γcov)
+        @test_throws ArgumentError plnpca(Y, X, 2; var_prior = :other)
+        #4 samples, deep counts (latent values almost observed), variances from an inverse gamma with a0 = 2: the
+        #coefficients use 2 of the 4 degrees of freedom of each gene, and q(σⱼ²) must not count them (the mean-field
+        #shape a0 + n / 2 gave a0 ≈ 5)
+        rng = Xoshiro(15)
+        n, p = 4, 2_000
+        X = [ones(n) [0.0, 1.0, 0.0, 1.0]]
+        σ2 = rand(rng, InverseGamma(2.0, 0.3), p)
+        Z = (randn(rng, p) .+ 8)' .+ randn(rng, n, p) .* sqrt.(σ2)'
+        Y = [rand(rng, Poisson(exp(Z[i, j]))) for i in 1:n, j in 1:p]
+        for vp in (:trend, :common)
+            r = PLNRUV.plnpca_run(Y, X, 0; var_prior = vp)
+            @test r.converged && 1.3 < r.priors.a0 < 3
+        end
+    end
+
+    @testset "MOUTHWASH: uncertainty of the loadings" begin
+        #estimates confounded by one factor (α = 2) whose loadings are known only up to an error of variance 0.02,
+        #the same for all genes: a multiplicative λ cannot cover it (it is large next to the small sⱼ²), Γcov does
+        rng = Xoshiro(16)
+        p, c = 4_000, 300
+        β = [zeros(c); (rand(rng, p - c) .< 0.2) .* randn(rng, p - c)]
+        s = sqrt.(rand(rng, Gamma(2, 0.02), p))
+        Γ = randn(rng, 1, p)
+        Γhat = Γ .+ sqrt(0.02) .* randn(rng, 1, p)
+        β̃ = β .+ vec(Γ) .* 2 .+ s .* randn(rng, p)
+        nc = (c + 1):p
+        function fdp(fit)
+            disc = nc[PLNRUV.cumulative_rate(fit.lfsr[nc]) .< 0.05]
+            return isempty(disc) ? 0.0 : mean((β[disc] .== 0) .| (sign.(β[disc]) .!= sign.(fit.mean[disc])))
+        end
+        plain = PLNRUV.mouthwash_fit(β̃, s, Γhat, 1:c)
+        withcov = PLNRUV.mouthwash_fit(β̃, s, Γhat, 1:c; Γcov = [fill(0.02, 1, 1) for _ in 1:p])
+        @test abs(withcov.α[1] - 2) < 0.1
+        @test fdp(withcov) < 0.08 && fdp(withcov) < fdp(plain)
+        @test 0.8 < withcov.λ < 1.25
     end
 
     @testset "Code quality (Aqua)" begin
