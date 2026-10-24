@@ -22,6 +22,10 @@ non-null genes reported with the right sign.
 | PLNRUV, `assignment = :threshold` | 0.58 | 0.19 |
 | seqgendiff | 0.46 | 0.15 |
 
+  The two define the target differently. seqgendiff sets the correlation of a continuous score, then cuts it in two
+  groups, which shrinks the correlation by about 0.8 for equal groups (0.6 × 0.8 = 0.48). PLNRUV sets the correlation
+  of the groups themselves ([§6.3](simulation.md)).
+
 ## 7.2 ash and MOUTHWASH
 
 - **ash**, 5 000 effects, 20 % non-null with sd 2, standard errors 0.5: ``\hat\pi_0 = 0.78`` (truth 0.8 plus the
