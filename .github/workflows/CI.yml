@@ -25,6 +25,6 @@ jobs:
       # Pkg.test currently fails to resolve the Test stdlib in its sandbox ("expected package Test to be
       # registered", on every Julia version): the test environment is built with Pkg.add and Pkg.develop instead
       - name: Build the test environment
-        run: julia --project=testenv -e 'using Pkg; Pkg.add(["Aqua", "Distributions", "Random", "Statistics", "Test"]); Pkg.develop(path = ".")'
+        run: julia --project=testenv -e 'using Pkg; Pkg.add(["Aqua", "Distributions", "Random", "Statistics", "StatsModels", "Test"]); Pkg.develop(path = ".")'
       - name: Run the tests
         run: julia --project=testenv --check-bounds=yes --depwarn=yes test/runtests.jl
