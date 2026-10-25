@@ -53,7 +53,9 @@ S^2_{ij}/2}\Big),
 
 where ``\mathcal W_0`` is the Lambert W function (the solution of ``w e^w = x``), ``\mu_{ij}`` the current mean and
 ``\sigma_j^2`` the current value of ``1 / \mathbb E[1/\sigma_j^2]``. The variance is the solution of ``S^2_{ij} = 1 /
-(e^{\,o_i + M_{ij} + S^2_{ij}/2} + 1/\sigma_j^2)``, found by fixed-point iteration.
+(e^{\,o_i + M_{ij} + S^2_{ij}/2} + 1/\sigma_j^2)``, found by Newton's method on its logarithm. The two are updated in
+turn, each exactly, so each step increases the ELBO. Repeating the right-hand side instead (a fixed-point iteration)
+can oscillate with a growing amplitude, for a zero count of a gene with a large variance.
 
 !!! details "Derivation"
     The derivative in ``M`` is zero when ``y - e^{a + M} - (M - \mu)/\sigma^2 = 0``, with ``a = o + S^2/2``. Let

@@ -15,13 +15,36 @@ function lambertw_exp(t::Real)
 end
 
 #variational E-step for one count: maximise y M - exp(o + M + S² / 2) - ((M - μ)² + S²) / (2σ²) + log(S²) / 2
-#M has a closed form through the Lambert W function, S² is a contractive fixed point
+#by exact coordinate steps, so that each one increases it: M has a closed form through the Lambert W function, S² is
+#the root of its own equation (see s2_given_m); a single fixed-point step S² <- 1 / (exp(o + M + S² / 2) + 1 / σ²)
+#instead oscillates with a growing amplitude for a zero count with a large σ², which can drive a very sparse gene to
+#an ever larger variance
 function estep_count(y, o, μ, σ2, M, S2; inner = 3)
     for _ in 1:inner
         M = μ + σ2 * y - lambertw_exp(log(σ2) + o + μ + σ2 * y + S2 / 2)
-        S2 = 1 / (exp(o + M + S2 / 2) + 1 / σ2)
+        S2 = s2_given_m(o + M, σ2, S2)
     end
     return M, S2
+end
+
+#S² maximising -exp(c + S² / 2) - S² / (2σ²) + log(S²) / 2 (concave): the root of 1 / S² = exp(c + S² / 2) + 1 / σ²,
+#written φ(S²) = c + S² / 2 + log S² - log(1 - S² / σ²) = 0 (increasing, without the exponential, whose convexity
+#makes Newton steps crawl); the root lies between 1 / (exp(c + σ² / 2) + 1 / σ²) and 1 / (exp(c) + 1 / σ²): Newton
+#steps from S20 kept inside this bracket, bisection (geometric while the bracket is wide) when a step leaves it
+function s2_given_m(c, σ2, S20)
+    lo = 1 / (exp(c + σ2 / 2) + 1 / σ2)
+    hi = 1 / (exp(c) + 1 / σ2)
+    S = clamp(S20, lo, hi)
+    for _ in 1:100
+        φ = c + S / 2 + log(S) - log1p(-S / σ2)
+        φ < 0 ? (lo = S) : (hi = S)
+        Snew = S - φ / (1 / 2 + 1 / S + 1 / (σ2 - S))
+        lo < Snew < hi || (Snew = hi > 4lo ? sqrt(lo * hi) : (lo + hi) / 2)
+        done = abs(Snew - S) <= 1.0e-12 * S
+        S = Snew
+        done && break
+    end
+    return S
 end
 
 struct PLNFit
@@ -139,6 +162,7 @@ function contrast_test(
         fit::PLNFit, X::AbstractMatrix{<:Real}, c::AbstractVector{<:Real}; controls = Int[], nullweight = 10,
         estimate_λ = true, alpha_uncertainty = true, likelihood = :t, mode = :auto, mode_threshold = 0.05
     )
+    X = float(X) #an integer X'X would be solved in BigFloat, and every later step with it
     a = X * (Symmetric(X' * X) \ c)
     β̃ = vec(a' * fit.M)
     λcount = exp.(fit.offsets .+ fit.μ .+ fit.σ2' ./ 2)

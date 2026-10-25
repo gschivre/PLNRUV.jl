@@ -394,6 +394,9 @@ using PLNRUV, Aqua, Test, Random, Distributions, Statistics, StatsModels
         dc = test_contrast(r, Xt, [0, -1, 1]; controls = 1:c)
         @test isequal(dc.mean, pln_mouthwash(Y, Xt, 0; controls = 1:c, contrast = [0, -1, 1]).mouthwash.mean)
         @test_throws DimensionMismatch test_contrast(r, Xt, [0, 1]; controls = 1:c)
+        #an integer design gives the same answer, in Float64 (an integer X'X was solved in BigFloat)
+        di = test_contrast(r, Int.(Xt), [0, -1, 1]; controls = 1:c)
+        @test eltype(di.β̃) == Float64 && isequal(di.mean, dc.mean)
         #formulas (StatsModels extension): the same design and contrast by names
         samples = (level = ["a", "b", "c"][Int.(g) .+ 1],)
         dm = design_matrix(@formula(0 ~ level), samples)
