@@ -50,15 +50,17 @@ and an independent measurement, such as RNA per cell or imaging, are useful chec
 
 ## 8.4 Few samples
 
-The benchmark covers 5 and 10 samples per group ([§7.4](validation.md)). Smaller designs are not validated yet.
-What is known about them:
+The benchmark covers 2 to 10 samples per group ([§7.4](validation.md)). With valid controls, PLNRUV is as close to
+the nominal level as an oracle that knows the true normalisation. What few samples cost:
 
 - **Two samples per group.** No hidden factor can be fitted: the design and the offset leave one residual degree of
-  freedom. Confounding is then not corrected, and a confounded design gives false discoveries. A balanced 2 + 2 design
-  does not exist ([§6.3](simulation.md)).
-- **Three samples per group.** Each gene has one or two residual degrees of freedom, so few discoveries are possible.
+  freedom. Confounding is then not corrected, and a confounded design gives false discoveries. With random groups even
+  the oracle is somewhat above the nominal level.
+- **Three samples per group.** Each gene has one or two residual degrees of freedom. Only strong effects can be
+  found.
 - **Chance confounding.** With 2 or 3 samples per group, a random split is often almost aligned with a main source of
   variation of the samples. Look at the main factors of your samples before trusting the results.
+- **The Gaussian branch** is not calibrated with 2 or 3 samples per group. Use the PLN branch there.
 - **Ten samples per group or more.** The ``t`` likelihood is conservative: the achieved false discovery proportion is
   below the nominal level, and some power is lost. The normal likelihood (`likelihood = :normal`) is calibrated there,
   but not with fewer samples.

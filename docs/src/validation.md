@@ -72,37 +72,71 @@ The offset coefficient is estimated at ``\hat\alpha_0 \approx 1.0``, the true sh
 ## 7.4 Benchmark on thinned GTEx data
 
 Two-group experiments are built from GTEx v8 skeletal muscle by binomial thinning ([§6](simulation.md)): 2 000
-genes, 200 negative controls, 5 or 10 samples per group, 10 data sets per scenario. Every method gets the same
-number of hidden factors, ``q = 2``.
+genes, 200 negative controls, 2 to 10 samples per group. There are 30 data sets per scenario with 2 or 3 samples per
+group, and 10 with 5 or 10.
 
-- **Balanced**: 20 % of the genes change, log₂ fold changes ``\sim \mathcal N(0, 0.8)``; the groups are uncorrelated
-  with the two main factors (|ρ| ≤ 0.15).
+- **Random groups**: 20 % of the genes change, log₂ fold changes ``\sim \mathcal N(0, 0.8)``; the samples are split
+  at random.
+- **Balanced**: the same effects; the groups are uncorrelated with the two main factors (|ρ| ≤ 0.15).
 - **Confounded**: the same effects; the groups are correlated with the two main factors (0.6 and 0.2, ± 0.15).
-- **Global increase**: 60 % of the genes go up, log₂ fold changes ``\sim \mathcal N(1, 0.5)``, confounded as above.
+- **Global increase**: 60 % of the genes go up, log₂ fold changes ``\sim \mathcal N(1, 0.5)``, with random groups
+  or confounded as above.
 
-The oracle knows the two factors and the true normalisation.
+A target correlation can only be met on selected sets of samples with 2 or 3 per group ([§6.3](simulation.md)), so
+the balanced and confounded scenarios start at 5 per group.
+
+PLNRUV takes its number of factors from `choose_q`. The R methods use ``q = 2``, or ``n - 4`` when fewer samples
+leave no room for two. The oracle knows the true normalisation and fits its own hidden factors, with the same
+``q`` as PLNRUV.
 
 ![Benchmark by number of samples per group](figures/sample_size.png)
 
-FDP / power, means over 10 data sets:
+FDP / power, means over the data sets:
 
 | scenario | per group | PLNRUV (controls) | PLNRUV (sparsity) | oracle | DESeq2 | edgeR | limma-voom | vicar | spike-in CATE |
 |---|---|---|---|---|---|---|---|---|---|
-| balanced | 5 | 4.5 % / 0.21 | 4.5 % / 0.20 | 6.3 % / 0.21 | 6.1 % / 0.16 | 0.2 % / 0.08 | 0.2 % / 0.08 | 18 % / 0.29 | 23 % / 0.35 |
-| balanced | 10 | 3.6 % / 0.34 | 2.7 % / 0.33 | 3.6 % / 0.35 | 5.7 % / 0.30 | 2.8 % / 0.24 | 1.2 % / 0.23 | 7.2 % / 0.39 | 13 % / 0.41 |
-| confounded | 5 | 4.2 % / 0.14 | 7.3 % / 0.14 | 7.3 % / 0.13 | 29 % / 0.22 | 7.8 % / 0.11 | 7.7 % / 0.12 | 22 % / 0.23 | 44 % / 0.39 |
-| confounded | 10 | 3.0 % / 0.26 | 3.9 % / 0.25 | 4.2 % / 0.28 | 33 % / 0.36 | 22 % / 0.30 | 15 % / 0.29 | 8.7 % / 0.31 | 31 % / 0.44 |
-| global increase | 5 | 5.1 % / 0.62 | 46 % / 0.31 | 4.9 % / 0.59 | 37 % / 0.25 | 29 % / 0.18 | 30 % / 0.16 | 42 % / 0.46 | 12 % / 0.65 |
-| global increase | 10 | 5.3 % / 0.75 | 47 % / 0.49 | 4.4 % / 0.77 | 42 % / 0.42 | 38 % / 0.40 | 38 % / 0.38 | 46 % / 0.68 | 8.4 % / 0.72 |
+| random groups | 2 | 13 % / 0.01 | 10 % / 0.01 | 12 % / 0.01 | 53 % / 0.07 | 6.7 % / 0.00 | 1.7 % / 0.00 | – | 52 % / 0.07 |
+| random groups | 3 | 8.1 % / 0.04 | 9.9 % / 0.04 | 8.9 % / 0.04 | 28 % / 0.09 | 10 % / 0.01 | 10 % / 0.01 | 42 % / 0.20 | 60 % / 0.37 |
+| random groups | 5 | 7.0 % / 0.17 | 7.8 % / 0.17 | 7.8 % / 0.17 | 19 % / 0.20 | 6.2 % / 0.09 | 4.8 % / 0.09 | 17 % / 0.25 | 37 % / 0.38 |
+| random groups | 10 | 4.0 % / 0.35 | 3.8 % / 0.35 | 4.4 % / 0.35 | 9.4 % / 0.31 | 4.0 % / 0.25 | 1.8 % / 0.24 | 7.9 % / 0.38 | 14 % / 0.42 |
+| balanced | 5 | 5.1 % / 0.22 | 4.9 % / 0.21 | 5.3 % / 0.22 | 6.1 % / 0.16 | 0.2 % / 0.08 | 0.2 % / 0.08 | 18 % / 0.29 | 23 % / 0.35 |
+| balanced | 10 | 3.4 % / 0.36 | 3.7 % / 0.35 | 3.5 % / 0.36 | 5.7 % / 0.30 | 2.8 % / 0.24 | 1.2 % / 0.23 | 7.2 % / 0.39 | 13 % / 0.41 |
+| confounded | 5 | 6.9 % / 0.15 | 8.3 % / 0.15 | 7.2 % / 0.15 | 29 % / 0.22 | 7.8 % / 0.11 | 7.7 % / 0.12 | 22 % / 0.23 | 44 % / 0.39 |
+| confounded | 10 | 4.4 % / 0.29 | 5.9 % / 0.29 | 4.8 % / 0.29 | 33 % / 0.36 | 22 % / 0.30 | 15 % / 0.29 | 8.7 % / 0.31 | 30 % / 0.44 |
+| global, random groups | 2 | 6.6 % / 0.35 | 25 % / 0.08 | 5.5 % / 0.30 | 34 % / 0.06 | 0.0 % / 0.00 | 3.3 % / 0.00 | – | 11 % / 0.20 |
+| global, random groups | 3 | 5.3 % / 0.52 | 34 % / 0.17 | 4.7 % / 0.49 | 25 % / 0.09 | 8.6 % / 0.01 | 8.3 % / 0.01 | 29 % / 0.22 | 19 % / 0.60 |
+| global, random groups | 5 | 5.0 % / 0.64 | 47 % / 0.38 | 4.8 % / 0.64 | 31 % / 0.21 | 17 % / 0.13 | 16 % / 0.12 | 40 % / 0.44 | 11 % / 0.64 |
+| global, random groups | 10 | 4.8 % / 0.82 | 49 % / 0.59 | 4.7 % / 0.82 | 41 % / 0.38 | 35 % / 0.36 | 34 % / 0.35 | 47 % / 0.73 | 4.9 % / 0.73 |
+| global, confounded | 5 | 5.4 % / 0.63 | 47 % / 0.32 | 5.2 % / 0.63 | 37 % / 0.25 | 29 % / 0.18 | 30 % / 0.16 | 42 % / 0.46 | 12 % / 0.65 |
+| global, confounded | 10 | 5.6 % / 0.78 | 47 % / 0.52 | 5.2 % / 0.78 | 42 % / 0.42 | 38 % / 0.40 | 38 % / 0.38 | 46 % / 0.68 | 8.4 % / 0.72 |
+
+vicar needs at least 3 samples per group.
 
 What this shows:
 
-- PLNRUV with controls stays close to 5 % in all three scenarios, with the power of the oracle.
+- PLNRUV with controls has the FDP and the power of the oracle in every scenario and at every size.
+- From 5 samples per group it stays close to 5 %. With 2 or 3 per group the oracle itself is above 5 % (8–13 %
+  with random groups), and so is PLNRUV. With effects of sd 0.8 there are then very few discoveries.
 - Without controls, PLNRUV is calibrated when most genes do not change, and fails, as expected, when most go up
   ([§1.3](problem.md)).
-- The standard pipelines lose control as soon as the groups are confounded. The higher power of CATE and of the
-  spike-in pipeline comes with a high FDP.
-- The Gaussian log-ratio branch ([§5.7](pln.md)) is calibrated at these sizes, with less power at 5 per group.
+- The standard pipelines lose control as soon as the groups are confounded, and with 2 or 3 samples even when they
+  are not. The higher power of CATE and of the spike-in pipeline comes with a high FDP.
+- The Gaussian log-ratio branch ([§5.7](pln.md)) is close to 5 % in the global scenarios. Elsewhere it is above:
+  6–8 % at 10 per group, 12–15 % at 5, and 52 % at 2.
+
+**Stronger effects with few samples.** With log₂ fold changes of sd 1.6, and 2 or 3 samples per group:
+
+![Stronger effects with 2 and 3 samples per group](figures/strong_signal.png)
+
+| scenario | per group | PLNRUV (controls) | oracle | DESeq2 | edgeR | limma-voom | spike-in CATE |
+|---|---|---|---|---|---|---|---|
+| random groups | 2 | 9 % / 0.09 | 9 % / 0.09 | 27 % / 0.24 | 5 % / 0.04 | 3 % / 0.03 | 26 % / 0.24 |
+| random groups | 3 | 6 % / 0.23 | 6 % / 0.23 | 15 % / 0.32 | 4 % / 0.19 | 4 % / 0.18 | 52 % / 0.56 |
+| global, random groups | 2 | 5 % / 0.67 | 4 % / 0.64 | 27 % / 0.29 | 10 % / 0.14 | 10 % / 0.11 | 6 % / 0.54 |
+| global, random groups | 3 | 4 % / 0.78 | 3 % / 0.77 | 32 % / 0.40 | 19 % / 0.35 | 20 % / 0.33 | 15 % / 0.79 |
+
+PLNRUV again matches the oracle. edgeR and limma-voom are calibrated with random groups when nothing changes
+globally, with less power; they fail when most genes go up.
 
 **Misspecified controls.** The confounded and global scenarios again, 10 samples per group, but the 200 controls
 carry small effects: *noisy* controls, ``\mathcal N(0, 0.2)`` each, or *biased* controls, which shift together,
@@ -110,21 +144,18 @@ carry small effects: *noisy* controls, ``\mathcal N(0, 0.2)`` each, or *biased* 
 
 ![Benchmark with misspecified controls](figures/benchmark_controls.png)
 
-- **Noisy controls** average out: PLNRUV with controls stays at 2.1 % (confounded) and 3.8 % (global).
-- **Biased controls** break every control-based method in the confounded scenario: PLNRUV 60 %, DESeq2 with control
-  size factors 42 %, the spike-in pipeline 42 %. The sparsity branch is not affected (2.5 %). In the global scenario
-  PLNRUV with controls stays calibrated (1.2 %), with less power (0.58 against 0.74).
+- **Noisy controls** average out: PLNRUV with controls stays at 2.5 % (confounded) and 3.8 % (global).
+- **Biased controls** break every control-based method in the confounded scenario: PLNRUV 69 %, DESeq2 with control
+  size factors 42 %, the spike-in pipeline 42 %. The sparsity branch is not affected (4.6 %). In the global scenario
+  PLNRUV with controls stays calibrated (1.3 %), with less power (0.61 against 0.76 for the oracle).
 
 Controls that move with the condition, even slightly, are the main threat to a control-based analysis
 ([§8](limits.md)).
 
-**Smaller designs** (2 or 3 samples per group) are not reported yet. With so few samples a target confounding can
-only be reached on selected sets of samples ([§6.3](simulation.md)), and these results need another design.
-
 ## 7.5 The PLN fit and the number of factors
 
 **Variance prior and likelihood.** The same data sets (balanced, confounded, global; 5 data sets each), PLNRUV with
-controls, FDP / power:
+controls and ``q = 2``, FDP / power:
 
 | scenario | per group | trend prior, ``t`` (default) | common prior | trend prior, normal likelihood | earlier fit |
 |---|---|---|---|---|---|
@@ -142,9 +173,8 @@ controls, FDP / power:
   per group.
 
 **Choosing ``q``** ([§3.3](confounders.md)). PLN simulations, 20 samples, 400 genes: `choose_q` returns the true
-number of factors for 0, 1, 2 and 3 factors, in one pass. On GTEx it chooses 1–4 factors at 5 per group and 3–5 at
-10 per group. With this ``q`` instead of ``q = 2``, PLNRUV with controls has an FDP of 6.9 % (5 per group) and 4.5 %
-(10 per group) in the confounded scenario, for the same power.
+number of factors for 0, 1, 2 and 3 factors, in one pass. On GTEx it chooses no factor at 2 per group (four samples
+leave no room for one), 0–2 at 3 per group, 1–4 at 5 and 3–5 at 10. The benchmark of §7.4 uses this choice.
 
 **Automatic relevance determination does not replace `choose_q`.** Given the largest possible bound on GTEx
 (confounded, 5 data sets), the fit kept 3–4 of 6 factors at 5 per group and 8–9 of 16 at 10 per group. The FDP rose

@@ -87,7 +87,7 @@ function sample_size_figures(out = joinpath(SROOT, "docs", "src", "figures"))
     #stronger effects with 2 and 3 samples per group, where the effects of sd 0.8 are mostly too small to be found
     f2 = sample_size_figure(
         rows, 1.6; columns = [FIGCOLS[1], FIGCOLS[4]], ns = [2, 3],
-        title = "Effect sd 1.6, 2 and 3 samples per group: FDP, power and RMSE; mean ± s.e. over the data sets"
+        title = "Effect sd 1.6, 2 and 3 samples per group: FDP, power and RMSE\nmean ± s.e. over the data sets; dotted line: 0.05"
     )
     save(joinpath(out, "strong_signal.png"), f2; px_per_unit = 2)
     return f, f2
