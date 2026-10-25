@@ -146,18 +146,21 @@ function oracle_methods(sim, sc, q)
         offset_factor = false
     )
     mw = fit.mouthwash
-    out = Dict("oracle_design" => (mw.mean ./ log(2), mw.svalue))
+    out = Dict("oracle_design" => untested(mw.mean ./ log(2), mw.svalue))
     #true prior in natural log units; the controls are part of the null spike
-    p = size(sim.counts, 2)
+    P = size(sim.counts, 2)
+    #the PLN fit covers the tested genes only (keep); the computation below is on them, then expanded
+    keep = fit.tested
+    p = length(keep)
     nsig = length(sim.signal)
     d = sc.signal
-    π = [1 - nsig / p, nsig / p]
+    π = [1 - nsig / P, nsig / P]
     σ2 = [0.0, (std(d) * log(2))^2]
     means = [0.0, mean(d) * log(2)]
     #the corrected estimates and their noise as in mouthwash_fit (default t likelihood): control-based α, its
     #uncertainty added to the variances, then the fitted inflation
     #loading uncertainty: its error variance α'Cov(Γⱼ)α, and E[ΓΓ'] in the normal equations of α
-    Γ, s2, ctrl, Γcov = fit.pln.Γ, mw.s .^ 2, sim.controls, fit.pln.Γcov
+    Γ, s2, ctrl, Γcov = fit.pln.Γ, mw.s[keep] .^ 2, findall(in(Set(sim.controls)), keep), fit.pln.Γcov
     a = zeros(p)
     l = size(Γ, 1) > 0 ? [dot(mw.α, Γcov[j] * mw.α) for j in 1:p] : zeros(p)
     if size(Γ, 1) > 0 #factors switched off by the fit carry no loadings
@@ -166,10 +169,13 @@ function oracle_methods(sim, sc, q)
         free = setdiff(1:p, ctrl)
         a[free] .= vec(sum(Γ[:, free] .* (G \ Γ[:, free]); dims = 1))
     end
-    r = size(Γ, 1) > 0 ? mw.β̃ - Γ' * mw.α : mw.β̃
+    r = size(Γ, 1) > 0 ? mw.β̃[keep] - Γ' * mw.α : mw.β̃[keep]
     N = PLNRUV.scale_noise(PLNRUV.NoiseModel(s2 .+ l .+ a, fit.pln.df), mw.λ)
     post = PLNRUV.ash_posterior(r, N, σ2, π; means = means)
-    out["oracle_prior"] = (post.mean ./ log(2), PLNRUV.cumulative_rate(post.lfsr))
+    lfc, sv = zeros(P), ones(P)
+    lfc[keep] .= post.mean ./ log(2)
+    sv[keep] .= PLNRUV.cumulative_rate(post.lfsr)
+    out["oracle_prior"] = (lfc, sv)
     return out
 end
 

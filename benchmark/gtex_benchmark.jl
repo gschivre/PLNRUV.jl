@@ -127,12 +127,16 @@ function run_extra(M, method; nrep = 10, ngenes = 2_000, nctrl = 200, nsamp = 20
 end
 
 #PLNRUV methods: log2 fold changes and s-values
+#genes that PLNRUV does not test (no count in a group) get no effect and are never called, as genes that an R method
+#cannot test
+untested(lfc, s) = (replace(lfc, NaN => 0.0), replace(s, NaN => 1.0))
+
 function julia_methods(counts, X, controls, q)
     out = Dict{String, Tuple{Vector{Float64}, Vector{Float64}}}()
     eb = pln_mouthwash(counts, X, q; controls = controls).mouthwash
-    out["PLNRUV_EB_controls"] = (eb.mean ./ log(2), eb.svalue)
+    out["PLNRUV_EB_controls"] = untested(eb.mean ./ log(2), eb.svalue)
     ebf = pln_mouthwash(counts, X, q).mouthwash
-    out["PLNRUV_EB_sparsity"] = (ebf.mean ./ log(2), ebf.svalue)
+    out["PLNRUV_EB_sparsity"] = untested(ebf.mean ./ log(2), ebf.svalue)
     g = mouthwash(log_ratio(counts, controls), X, q; controls = controls)
     out["PLNRUV_gaussian_logratio"] = (g.mean ./ log(2), g.svalue)
     return out
