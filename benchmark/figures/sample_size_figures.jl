@@ -58,14 +58,16 @@ function sample_size_figure(rows, s; columns = FIGCOLS, ns = [2, 3, 5, 10], titl
     fig = Figure(size = (300 * length(columns) + 120, 1020), fontsize = 14)
     metrics_ = (("fdp", "FDP"), ("power", "Power"), ("rmse", "RMSE of log₂FC"))
     for (j, (sc, slabel)) in enumerate(columns), (i, (metric, mlabel)) in enumerate(metrics_)
+        #the sizes of the current design are those where PLNRUV was run (the file can keep older rows of other methods)
+        sizes = intersect(ns, Int.(first.(scurve(rows, sc, s, "PLNRUV_EB_controls", metric))))
         ax = Axis(
             fig[i, j]; title = i == 1 ? slabel : "", xlabel = i == length(metrics_) ? "Samples per group" : "",
-            ylabel = j == 1 ? mlabel : "", xscale = log2, xticks = (ns, string.(ns)), xgridcolor = (:gray, 0.15),
-            ygridcolor = (:gray, 0.15), limits = ((minimum(ns) / 1.15, maximum(ns) * 1.15), (0, nothing))
+            ylabel = j == 1 ? mlabel : "", xscale = log2, xticks = (sizes, string.(sizes)), xgridcolor = (:gray, 0.15),
+            ygridcolor = (:gray, 0.15), limits = ((minimum(sizes) / 1.15, maximum(sizes) * 1.15), (0, nothing))
         )
         metric == "fdp" && hlines!(ax, [0.05]; color = (:gray, 0.6), linestyle = :dot, linewidth = 1)
         for (key, label, col, ls, mk) in SMETHODS
-            c = filter(x -> x[1] in ns, scurve(rows, sc, s, key, metric))
+            c = filter(x -> x[1] in sizes, scurve(rows, sc, s, key, metric))
             isempty(c) && continue
             xs, ms, ses = first.(c), getindex.(c, 2), getindex.(c, 3)
             errorbars!(ax, xs, ms, ses; color = (col, 0.5), whiskerwidth = 4)
