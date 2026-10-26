@@ -54,6 +54,24 @@ biological variability. It dominates for large counts. Zeros need no special tre
 This is the offset factor of [§1.5](problem.md). Its value ``w_{i0}`` is a shift of sample ``i``, common to all its
 genes. It corrects the library size ``o_i`` for the unknown total RNA content of the sample.
 
+!!! details "Is the offset factor identifiable next to ``o_i``?"
+    Not separately, and it does not need to be. ``o_i`` is not a parameter: it is fixed to ``\log N_i``. The data
+    identify the sum ``o_i + w_{i0}``, and ``o_i`` only sets the reference from which ``w_{i0}`` is measured.
+
+    Change ``o`` by a vector ``\delta``, and split ``\delta`` along the design and in its residual space:
+
+    - **The residual part** is absorbed by ``w_0``, which is free in that space (``X^\top W = 0``). The fit does not
+      change. This is the multinomial–Poisson argument of [§1.1](problem.md).
+    - **The part along the design**, ``X c``, cannot go into ``w_0``. It shifts every ``B_j`` by the same ``-c``.
+      For the intercept and the other covariates, this shift does not enter any test
+      ([§3.1](confounders.md)). For the condition, it adds the same constant to every ``B_{kj}``. Since
+      ``\Gamma_{0j} = 1``, this constant is absorbed by ``\alpha_0``, which controls or sparsity estimate
+      (§2.3).
+
+    **Result** — the choice of ``o_i`` changes ``w_{i0}``, the intercepts and ``\hat\alpha_0``, but not the
+    effects ``\hat\beta_j``. The choice ``o_i = \log N_i`` gives ``w_{i0}`` and ``\alpha_0`` their meaning: a
+    correction of the scaling by library size. It is also a good starting point for the fit.
+
 ## 2.3 What the parameters mean
 
 In the fit, the factors are uncorrelated with the design (``X^\top W = 0``, see [§3](confounders.md)). The part of the
