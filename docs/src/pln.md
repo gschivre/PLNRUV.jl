@@ -8,8 +8,7 @@ p(y_{ij} \mid \mu_{ij}, \sigma_j^2) = \int \text{Poisson}\big(y_{ij};\, e^{o_i +
 \mathcal N(z;\, \mu_{ij}, \sigma_j^2)\, dz .
 ```
 
-The package maximises instead a lower bound of the log-likelihood, the ELBO, by variational inference (Chiquet et al.
-2018). The fit, [`plnpca`](@ref), also treats the factors, the loadings and the variances as random, with priors
+The package maximises instead a lower bound of the log-likelihood, the ELBO, by variational inference [ChiquetEtAl2018](@cite). The fit, [`plnpca`](@ref), also treats the factors, the loadings and the variances as random, with priors
 estimated from all genes. This is variational empirical Bayes. The coefficients have no prior, but their uncertainty
 is kept.
 
@@ -109,7 +108,7 @@ start. With low counts the ELBO can therefore decrease slightly in the first ite
 
 **Weak factors.** Scores and loadings are updated in turn, and for a weak factor a change of one is almost undone by
 the other: alternating updates then take hundreds of small steps. After each iteration, a parameter-expanded step
-(PX-VB, Qi & Jaakkola 2007) finds the best rescaling and rotation of scores and loadings that leaves their product,
+(PX-VB, [Qi and Jaakkola, 2007](@cite QiJaakkola2007)) finds the best rescaling and rotation of scores and loadings that leaves their product,
 and so the fit, unchanged. It cannot decrease the ELBO, and brings such fits from hundreds of iterations to a few
 dozen.
 

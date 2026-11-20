@@ -4,11 +4,15 @@
 # The pages are in docs/src; the manual is written to docs/build/index.html.
 # Deployment to GitHub Pages runs only when DOCS_DEPLOY=true (a repository variable, for when Pages is available).
 
-using Documenter, PLNRUV
+using Documenter, DocumenterCitations, PLNRUV
 
 DocMeta.setdocmeta!(PLNRUV, :DocTestSetup, :(using PLNRUV); recursive = true)
 
+# References live in docs/src/refs.bib; cite them in the pages with [key](@cite) or [key](@citet).
+bib = CitationBibliography(joinpath(@__DIR__, "src", "refs.bib"); style = :authoryear)
+
 makedocs(;
+    plugins = [bib],
     sitename = "PLNRUV.jl",
     modules = [PLNRUV],
     authors = "Geoffrey Schivre",

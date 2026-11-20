@@ -18,7 +18,7 @@ Take the effect tested as the last column of ``X``; any contrast can be put ther
 ([§5.6](pln.md)). Write the QR decomposition ``X = QR``: ``Q`` is an ``n \times n`` orthogonal matrix and ``R`` is
 upper triangular. Rotate the data: ``\tilde Y = Q^\top Y``. The noise of the
 rotated data is still ``\mathcal N(0, \sigma_j^2 I_n)``, because ``Q`` is orthogonal. The rows of ``\tilde Y`` form
-three blocks (Wang et al. 2017):
+three blocks [WangEtAl2017](@cite):
 
 ![The rotation splits the rows into three blocks](figures/rotation.svg)
 
@@ -49,7 +49,7 @@ main risk of factor-based corrections.
 ## 3.2 Factor analysis on the residual rows
 
 The residual block, of size ``(n - k) \times p``, is fitted by a factor model with one variance per gene. The fit
-alternates two steps, as in the alternation of Owen & Wang (2016):
+alternates two steps, as in the alternation of [OwenWang2016](@citet):
 
 1. With the variances fixed, the best rank-``q`` fit is a singular value decomposition of the residual block, with
    each gene weighted by ``1/\sigma_j``. The offset factor is fitted first: its loadings are fixed to one, so it is a
@@ -60,7 +60,7 @@ alternates two steps, as in the alternation of Owen & Wang (2016):
 ## 3.3 The number of factors
 
 Too few factors leave confounding. Too many fit the noise and use up degrees of freedom, which matters with few
-samples. [`choose_q`](@ref) chooses ``q`` by **count splitting** (Neufeld et al. 2024):
+samples. [`choose_q`](@ref) chooses ``q`` by **count splitting** ([Neufeld, Gao et al., 2024](@cite NeufeldGaoEtAl2024)):
 
 1. Split every count in two parts: a training part and a test part.
 2. For each candidate ``q``, fit the PLN model on the training part.
@@ -73,8 +73,7 @@ many factors. With the PLN fit of [§5](pln.md) this did not happen in simulatio
 random, factors that the data do not support are switched off, and the split finds the true number of factors in
 one pass ([§7.5](validation.md)).
 
-`split = :betabinomial` splits the latent noise too, by **beta-binomial thinning** (Neufeld, Dharamshi, Gao & Witten
-2024):
+`split = :betabinomial` splits the latent noise too, by **beta-binomial thinning** ([Neufeld, Dharamshi et al., 2024](@cite NeufeldDharamshiEtAl2024)):
 
 ```math
 y^{(1)} \mid y \sim \text{BetaBinomial}\big(y;\; \theta r_j,\; (1 - \theta) r_j\big),
@@ -109,10 +108,10 @@ The keyword `ε` of `choose_q` is ``\theta``. Results are in [§7.5](validation.
 Each raw estimate follows a regression on the known loadings with unknown coefficients ``\alpha``:
 ``b_j = \beta_j + \Gamma_j^\top \alpha + \text{noise}``. Two assumptions identify ``\alpha``:
 
-- **Negative controls** (RUV-4, Gagnon-Bartsch et al. 2013). For ``j \in C``, ``\beta_j = 0``, so a weighted
+- **Negative controls** (RUV-4, [Gagnon-Bartsch et al., 2013](@cite GagnonBartschEtAl2013)). For ``j \in C``, ``\beta_j = 0``, so a weighted
   regression of the ``b_j`` of the controls on their ``\Gamma_j`` estimates ``\alpha``. This needs at least ``q + 1``
   controls.
-- **Sparsity** (CATE of Wang et al. 2017; MOUTHWASH of Gerard & Stephens 2020). Most ``\beta_j`` are zero, so
+- **Sparsity** (CATE of [Wang et al., 2017](@cite WangEtAl2017); MOUTHWASH of [Gerard and Stephens, 2020](@cite GerardStephens2020)). Most ``\beta_j`` are zero, so
   ``\alpha`` is the value that concentrates the corrected estimates ``b_j - \Gamma_j^\top \alpha`` at zero.
   MOUTHWASH does this with a likelihood ([§4.3](empirical_bayes.md)).
 
@@ -121,7 +120,7 @@ the offset factor, whose loadings are all one.
 
 - With controls, ``\hat\alpha_0`` is the weighted mean raw estimate of the controls, after removing the other
   factors. It measures the change of the other genes relative to the controls.
-- Without controls, ``\hat\alpha_0`` puts the mode of the effects at zero, as in LinDA (Zhou et al. 2022), but
+- Without controls, ``\hat\alpha_0`` puts the mode of the effects at zero, as in LinDA [ZhouEtAl2022](@cite), but
   jointly with the other confounders. It does not measure a global change.
 
 ## 3.5 Why the offset factor has fixed loadings

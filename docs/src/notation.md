@@ -71,61 +71,6 @@ Each symbol has one meaning in the whole manual. Logarithms are natural; log₂ 
 
 ## References
 
-- Aitchison J. & Ho C. H. (1989) The multivariate Poisson-log normal distribution. *Biometrika* 76, 643–653.
-- Baker S. G. (1994) The multinomial–Poisson transformation. *J. R. Stat. Soc. D* 43, 495–504.
-- Chiquet J., Mariadassou M. & Robin S. (2018) Variational inference for probabilistic Poisson PCA. *Ann. Appl. Stat.*
-  12, 2674–2698.
-- Coate J. E. & Doyle J. J. (2015) Variation in transcriptome size: are we getting the message? *Chromosoma* 124,
-  27–43.
-- Evans C., Hardin J. & Stoebel D. M. (2018) Selecting between-sample RNA-Seq normalization methods from the
-  perspective of their assumptions. *Brief. Bioinform.* 19, 776–792.
-- Gagnon-Bartsch J. A., Jacob L. & Speed T. P. (2013) Removing unwanted variation from high dimensional data with
-  negative controls. Technical report, UC Berkeley.
-- Gerard D. (2020) Data-based RNA-seq simulations by binomial thinning. *BMC Bioinformatics* 21, 206.
-- Gerard D. & Stephens M. (2020) Empirical Bayes shrinkage and false discovery rate estimation, allowing for unwanted
-  variation. *Biostatistics* 21, 15–32.
-- Gerard D. & Stephens M. (2021) Unifying and generalizing methods for removing unwanted variation based on negative
-  controls. *Stat. Sin.* 31, 1145–1166.
-- Kim Y., Carbonetto P., Stephens M. & Anitescu M. (2020) A fast algorithm for maximum likelihood estimation of
-  mixture proportions using sequential quadratic programming. *J. Comput. Graph. Stat.* 29, 261–273.
-- Laosuntisuk K. et al. (2024) A normalization method that controls for total RNA abundance affects the identification
-  of differentially expressed genes, revealing bias toward morning-expressed responses. *Plant J.* 118, 1241–1257.
-- Law C. W., Chen Y., Shi W. & Smyth G. K. (2014) voom: precision weights unlock linear model analysis tools for
-  RNA-seq read counts. *Genome Biol.* 15, R29.
-- Lawson C. L. & Hanson R. J. (1974) *Solving Least Squares Problems*. Prentice-Hall.
-- Liu C., Rubin D. B. & Wu Y. N. (1998) Parameter expansion to accelerate EM: the PX-EM algorithm. *Biometrika* 85,
-  755–770.
-- Lovén J. et al. (2012) Revisiting global gene expression analysis. *Cell* 151, 476–482.
-- Lu M. & Stephens M. (2016) Variance adaptive shrinkage (vash): flexible empirical Bayesian estimation of variances.
-  *Bioinformatics* 32, 3428–3434.
-- Lu M. & Stephens M. (2019) Empirical Bayes estimation of normal means, accounting for uncertainty in estimated
-  standard errors. arXiv:1901.10679.
-- Morgan K. L. & Rubin D. B. (2012) Rerandomization to improve covariate balance in experiments. *Ann. Stat.* 40,
-  1263–1282.
-- Neufeld A., Dharamshi A., Gao L. L. & Witten D. (2024) Data thinning for convolution-closed distributions.
-  *J. Mach. Learn. Res.* 25(57), 1–35.
-- Neufeld A., Gao L. L., Popp J., Battle A. & Witten D. (2024) Inference after latent variable estimation for
-  single-cell RNA sequencing data. *Biostatistics* 25, 270–287.
-- Owen A. B. & Wang J. (2016) Bi-cross-validation for factor analysis. *Stat. Sci.* 31, 119–139.
-- Pirrello J. et al. (2018) Transcriptome profiling of sorted endoreduplicated nuclei from tomato fruits: how the
-  global shift in expression ascribed to DNA ploidy influences RNA-Seq data normalization and interpretation.
-  *Plant J.* 93, 387–398.
-- Qi Y. & Jaakkola T. S. (2007) Parameter expanded variational Bayesian methods. *Adv. Neural Inf. Process. Syst.*
-  19, 1097–1104.
-- Quinn T. P. et al. (2018) Understanding sequencing data as compositions: an outlook and review. *Bioinformatics* 34,
-  2870–2878.
-- Schivre G. et al. (2025) Genome-scale transcriptome augmentation during *Arabidopsis thaliana* photomorphogenesis.
-  *Nat. Commun.* 16, 11228.
-- Smyth G. K. (2004) Linear models and empirical Bayes methods for assessing differential expression in microarray
-  experiments. *Stat. Appl. Genet. Mol. Biol.* 3, 3.
-- Stegle O., Parts L., Piipari M., Winn J. & Durbin R. (2012) Using probabilistic estimation of expression residuals
-  (PEER) to obtain increased power and interpretability of gene expression analyses. *Nat. Protoc.* 7, 500–507.
-- Stephens M. (2017) False discovery rates: a new deal. *Biostatistics* 18, 275–294.
-- Taruttis F. et al. (2017) External calibration with *Drosophila* whole-cell spike-ins delivers absolute mRNA fold
-  changes from human RNA-Seq and qPCR data. *Biotechniques* 62, 53–61.
-- van de Peppel J. et al. (2003) Monitoring global messenger RNA changes in externally controlled microarray
-  experiments. *EMBO Rep.* 4, 387–393.
-- Wang J., Zhao Q., Hastie T. & Owen A. B. (2017) Confounder adjustment in multiple hypothesis testing. *Ann. Stat.*
-  45, 1863–1894.
-- Zhou H., He K., Chen J. & Zhang X. (2022) LinDA: linear models for differential abundance analysis of microbiome
-  compositional data. *Genome Biol.* 23, 95.
+```@bibliography
+*
+```

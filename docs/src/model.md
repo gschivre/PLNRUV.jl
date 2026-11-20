@@ -28,8 +28,7 @@ The terms are:
 - ``w_i^\top \Gamma_j``: the factors of sample ``i`` times their loadings on gene ``j`` ([§1.4](problem.md));
 - ``\varepsilon_{ij}``: the biological variability of gene ``j`` between samples, with variance ``\sigma_j^2``.
 
-This is the Poisson-lognormal (PLN) model of Aitchison & Ho (1989), with the low-rank structure of Chiquet et al.
-(2018). With ``\mu_{ij} = x_i^\top B_j + w_i^\top \Gamma_j``, a count has mean and variance
+This is the Poisson-lognormal (PLN) model of [AitchisonHo1989](@citet), with the low-rank structure of [ChiquetEtAl2018](@citet). With ``\mu_{ij} = x_i^\top B_j + w_i^\top \Gamma_j``, a count has mean and variance
 
 ```math
 \mathbb E[y_{ij}] = \bar y_{ij} = e^{o_i + \mu_{ij} + \sigma_j^2/2},

@@ -45,7 +45,7 @@ RNA content per cell only if all of these hold:
 genes. This branch cannot detect a global change, and should not be used to claim its absence.
 
 A global change should therefore be reported together with its identifying assumption, for example: "relative to
-spike-ins added per cell, the transcripts increase by …". The spike-in pipeline of Schivre et al. (2025)
+spike-ins added per cell, the transcripts increase by …". The spike-in pipeline of [SchivreEtAl2025](@citet)
 and an independent measurement, such as RNA per cell or imaging, are useful checks.
 
 ## 8.4 Few samples

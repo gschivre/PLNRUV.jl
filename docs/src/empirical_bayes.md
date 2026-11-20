@@ -13,7 +13,7 @@ This is empirical Bayes. The package estimates three things this way:
 Start from estimates ``b_j`` with standard errors ``s_j``: ``b_j \sim \mathcal N(\beta_j, s_j^2)``.
 
 - **Assumption** — the effects come from a distribution ``g`` that is unimodal and centred at zero. It is written as
-  a mixture of normals that includes a point mass at zero (Stephens 2017):
+  a mixture of normals that includes a point mass at zero [Stephens2017](@cite):
 
 ```math
 g(\beta) = \sum_{l=0}^{L} \pi_l\, \mathcal N(\beta;\, 0,\, \tau_l^2),\qquad \tau_0 = 0 .
@@ -31,7 +31,7 @@ point mass at zero (a Dirichlet(10, 1, …, 1) prior). The penalty makes the err
 \;+\; 9 \log \pi_0 .
 ```
 
-This problem is concave. It is solved by mix-SQP (Kim et al. 2020), which converges in a few steps where EM can need
+This problem is concave. It is solved by mix-SQP [KimEtAl2020](@cite), which converges in a few steps where EM can need
 thousands.
 
 !!! details "Posterior of each effect"
@@ -80,7 +80,7 @@ compositional offset ``\alpha_0``. Sparsity then sets the most common change to 
 ## 4.3 MOUTHWASH: confounders and effects together
 
 After the rotation of [§3](confounders.md), each gene has a raw estimate ``b_j \sim \mathcal N(\beta_j +
-\Gamma_j^\top\alpha,\; \lambda s_j^2)``. Gerard & Stephens (2020) estimate ``\alpha`` inside the ash likelihood:
+\Gamma_j^\top\alpha,\; \lambda s_j^2)``. [GerardStephens2020](@citet) estimate ``\alpha`` inside the ash likelihood:
 
 ```math
 (\hat\pi, \hat\alpha, \hat\lambda) = \arg\max\;
@@ -108,7 +108,7 @@ The effects are then shrunk by ash, applied to the corrected estimates ``b_j - \
 
 **Uncertainty of ``\hat\alpha``.** The corrected estimates share the error of ``\hat\alpha``. Its variance is added
 to each gene: ``s_j^2 + \Gamma_j^\top V_\alpha \Gamma_j``, where ``V_\alpha`` is the covariance of ``\hat\alpha``
-(as in Wang et al. 2017). The grid of ``\tau_l`` is built from these standard errors.
+(as in [Wang et al., 2017](@cite WangEtAl2017)). The grid of ``\tau_l`` is built from these standard errors.
 
 **Uncertainty of the loadings.** The loadings are estimated too. When the PLN fit provides their posterior
 covariance ``\text{Cov}(\Gamma_j)`` ([§5.5](pln.md)), MOUTHWASH uses it twice:
@@ -128,7 +128,7 @@ Gaussian log-ratio branch ([§5.7](pln.md)) has no such covariance and treats it
 
 **The ``t`` likelihood.** Each ``s_j`` rests on a variance estimated from ``d`` degrees of freedom (§4.5). Given the
 prior on the variances, the shrunk estimate follows a ``t`` distribution with ``d_0 + d`` degrees of freedom (Lemma 1
-of Lu & Stephens 2019). With `likelihood = :t`, the default, the normal densities above are replaced by these ``t``
+of [Lu and Stephens, 2019](@cite LuStephens2019)). With `likelihood = :t`, the default, the normal densities above are replaced by these ``t``
 densities.
 
 **Inflation adds noise.** The inflation ``\lambda`` stands for noise that the variance estimate does not see. Scaling
@@ -159,7 +159,7 @@ across genes prevents this.
 
 - **Assumption** — ``\hat\sigma_j^2 \mid \sigma_j^2 \sim \sigma_j^2\,\chi^2_d / d``.
 
-**limma** (Smyth 2004) puts one scaled inverse-``\chi^2`` prior on the variances, ``\sigma_j^2 \sim d_0 \sigma_0^2 /
+**limma** [Smyth2004](@cite) puts one scaled inverse-``\chi^2`` prior on the variances, ``\sigma_j^2 \sim d_0 \sigma_0^2 /
 \chi^2_{d_0}``. It estimates ``d_0`` and ``\sigma_0^2`` from the moments of ``\log \hat\sigma_j^2``. The shrunk
 variance is
 
@@ -167,7 +167,7 @@ variance is
 \tilde\sigma_j^2 = \frac{d_0 \sigma_0^2 + d\, \hat\sigma_j^2}{d_0 + d} .
 ```
 
-**vash** (Lu & Stephens 2016) does for the variances what ash does for the effects. Its prior is a mixture of inverse
+**vash** [LuStephens2016](@cite) does for the variances what ash does for the effects. Its prior is a mixture of inverse
 gammas, with a common scale ``c`` and a grid of shapes ``a_m``:
 
 ```math

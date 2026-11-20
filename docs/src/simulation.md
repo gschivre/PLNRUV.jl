@@ -2,7 +2,7 @@
 
 A method for real data should be tested on data that look real: real correlations between genes, real
 overdispersion, real zeros and real hidden factors. Parametric simulations get some of these wrong. Binomial thinning
-(Gerard 2020) starts from a real count matrix and adds known effects to it.
+[Gerard2020](@cite) starts from a real count matrix and adds known effects to it.
 
 ## 6.1 Thinning adds an exact effect
 
@@ -39,7 +39,7 @@ which removes sequencing depth; then each gene is centred. The groups are then a
 
 For the last two, the target is met in each data set, not only on average. The groups are drawn at random, and a
 draw is kept only if every correlation is within 0.15 of its target, in absolute value: this is **rerandomisation**
-(Morgan & Rubin 2012). The kept groups are a random draw among those that meet the target. The realised correlations
+[MorganRubin2012](@cite). The kept groups are a random draw among those that meet the target. The realised correlations
 are recorded.
 
 With very few samples a target can be out of reach. With 2 + 2 samples there are only three splits, and their centred

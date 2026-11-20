@@ -31,7 +31,7 @@ they are not.
 !!! details "Poisson or multinomial counts?"
     One can view the counts of a sample as a multinomial draw of ``N_i`` reads, or as independent Poisson counts.
     **Result** — both views give the same inference on the ``a_{ij}``, as long as each sample has its own free
-    offset (the multinomial–Poisson transform, Baker 1994). Let ``y_{ij} \sim \text{Poisson}(e^{o_i +
+    offset (the multinomial–Poisson transform, [Baker, 1994](@cite Baker1994)). Let ``y_{ij} \sim \text{Poisson}(e^{o_i +
     \eta_{ij}})``. Given the total ``N_i = \sum_j y_{ij}``, the counts are multinomial with probabilities
     ``e^{\eta_{ij}} / \sum_l e^{\eta_{il}}``, which do not depend on ``o_i``. The likelihood factorises into a
     Poisson term for ``N_i`` and this multinomial term. Maximising over a free ``o_i`` fits ``N_i`` exactly and
@@ -41,22 +41,22 @@ they are not.
 ## 1.2 When the total RNA content changes
 
 Most normalisation methods assume that the total RNA per cell is the same in all conditions. This includes scaling by
-library size, TMM and the median-of-ratios of DESeq2 (Evans et al. 2018). When the total changes, these methods
+library size, TMM and the median-of-ratios of DESeq2 [EvansEtAl2018](@cite). When the total changes, these methods
 shift every fold change by the same unknown amount. They miss the global change and can reverse the sign of many
-effects (Lovén et al. 2012; Coate & Doyle 2015).
+effects [LovenEtAl2012, CoateDoyle2015](@cite).
 
 A few studies measured this bias:
 
-- **c-Myc** amplifies the genes already expressed. Normalised data hide this amplification (Lovén et al. 2012).
+- **c-Myc** amplifies the genes already expressed. Normalised data hide this amplification [LovenEtAl2012](@cite).
 - **Endoreduplication** in tomato fruits raises the transcript content per nucleus, which changes the conclusions of
-  the analysis (Pirrello et al. 2018).
+  the analysis [PirrelloEtAl2018](@cite).
 - **Time of day** changes the RNA content of plant cells. A normalisation that accounts for it changes the list of
-  differentially expressed genes (Laosuntisuk et al. 2024).
+  differentially expressed genes [LaosuntisukEtAl2024](@cite).
 - **Light.** When dark-grown seedlings are exposed to light, the cotyledons roughly double their transcript levels.
-  Standard analyses of the same samples did not detect this increase (Schivre et al. 2025).
+  Standard analyses of the same samples did not detect this increase [SchivreEtAl2025](@cite).
 
-Spike-in molecules added in a fixed amount per cell can measure such changes (van de Peppel et al. 2003; Taruttis
-et al. 2017). They are rarely available.
+Spike-in molecules added in a fixed amount per cell can measure such changes
+[vandePeppelEtAl2003, TaruttisEtAl2017](@cite). They are rarely available.
 
 ## 1.3 Fold changes are only relative
 
@@ -96,8 +96,7 @@ The two assumptions answer different questions.
 ## 1.4 Hidden confounders
 
 The second problem has the same structure. Expression data contain variation that is not in the design but changes
-many genes together. Methods that remove it model it as a few hidden factors (Stegle et al. 2012; Gagnon-Bartsch et
-al. 2013; Wang et al. 2017; Gerard & Stephens 2020). Each factor ``l`` is described by:
+many genes together. Methods that remove it model it as a few hidden factors [StegleEtAl2012, GagnonBartschEtAl2013, WangEtAl2017, GerardStephens2020](@cite). Each factor ``l`` is described by:
 
 - a **factor** ``w_{il}``: its value in sample ``i``;
 - **loadings** ``\Gamma_{lj}``: how strongly gene ``j`` responds to it.
