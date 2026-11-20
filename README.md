@@ -38,7 +38,7 @@ fit = pln_mouthwash(counts, f, samples, q; controls,
                     contrast = ["time: 6h" => 1, "time: 2h" => -1])   # any contrast; fit.coefnames lists the names
 res = fit.mouthwash
 res.mean     # posterior mean log fold change (natural log)
-res.svalue   # report the genes with svalue < 0.05
+res.svalue   # s-value of every gene; report those below a threshold of your choice
 res.α[1]     # the compositional shift, relative to the controls
 ```
 

@@ -12,7 +12,7 @@ comparison.
   amount of RNA per cell changes between conditions, this change is invisible in the shares.
 
 PLNRUV.jl treats both problems with one model. The counts follow a Poisson-lognormal (PLN) distribution. The hidden
-confounders are latent factors, as in CATE (Wang et al. 2017) and MOUTHWASH (Gerard & Stephens 2020). The
+confounders are latent factors, as in CATE [WangEtAl2017](@cite) and MOUTHWASH [GerardStephens2020](@cite). The
 compositional offset is one more latent factor, with a known effect: it shifts every gene of a sample by the same
 amount.
 
@@ -70,7 +70,7 @@ fit = pln_mouthwash(counts, X, q; controls = controls)  # q factors + the offset
 res = fit.mouthwash
 res.mean      # posterior mean of each log fold change (natural log; divide by log(2) for log2)
 res.lfsr      # local false sign rate: probability that the reported sign is wrong
-res.svalue    # report the genes with svalue < 0.05
+res.svalue    # s-value of every gene; report those below a threshold of your choice
 res.α[1]      # the compositional shift α₀, relative to the controls
 res.converged # false if the fit stopped at maxiter
 
@@ -79,6 +79,8 @@ fit_sparse = pln_mouthwash(counts, X, q)
 
 # any design and any contrast, with a formula on a table of samples (needs StatsModels)
 using StatsModels
-fit = pln_mouthwash(counts, @formula(0 ~ genotype * time), samples, q; controls,
-                    contrast = ["time: 6h" => 1, "time: 2h" => -1])
+f = @formula(0 ~ genotype * time)
+q = choose_q(counts, f, samples).q
+fit = pln_mouthwash(counts, f, samples, q; controls,
+                    contrast = ["time: 6h" => 1, "time: 2h" => -1])  # fit.coefnames lists the names
 ```
